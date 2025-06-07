@@ -15,6 +15,7 @@ import { CashFlowAnalysis } from '@/components/dashboard/cash-flow-analysis'
 import { MetricSelector } from '@/components/dashboard/metric-selector'
 import { ReportsTab } from '@/components/dashboard/reports-tab'
 import { UseCaseSelector } from '@/components/dashboard/use-case-selector'
+import { getUseCase } from '@/types/use-cases'
 
 import {
   Collapsible,
@@ -38,22 +39,6 @@ export default function DashboardPage() {
   // NEW: Use case selection state
   const [selectedUseCase, setSelectedUseCase] = useState<string | null>(null)
   const [useCaseConfirmed, setUseCaseConfirmed] = useState(false)
-
-  console.log('=== DASHBOARD DEBUG ===')
-  console.log('useCaseConfirmed:', useCaseConfirmed)
-  console.log('selectedUseCase:', selectedUseCase)
-  console.log('hasUploadedData:', hasUploadedData)
-  console.log('localStorage useCaseConfirmed:', localStorage.getItem('useCaseConfirmed'))
-  console.log('localStorage selectedUseCase:', localStorage.getItem('selectedUseCase'))
-  console.log('!useCaseConfirmed result:', !useCaseConfirmed)
-  console.log('========================')
-
-// ADD THIS NEW SECTION
-try {
-  console.log('UseCaseSelector import check:', typeof UseCaseSelector)
-} catch (error) {
-  console.error('UseCaseSelector import error:', error)
-}
 
   useEffect(() => {
     // Check authentication client-side
@@ -162,8 +147,8 @@ try {
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
 
-          {/* NEW: Use Case Selection Section */}
-          {true && (
+           {/* Use Case Selection Section */}
+           {!useCaseConfirmed && (
             <div className="mb-8">
               <Card className="border-2 border-red-500">
                 <CardHeader>
@@ -177,6 +162,11 @@ try {
                   </Button>
                 </CardContent>
               </Card>
+              <UseCaseSelector
+                selectedUseCase={selectedUseCase}
+                onUseCaseSelect={handleUseCaseSelect}
+                onConfirm={handleUseCaseConfirm}
+              />
             </div>
           )}
 
@@ -186,7 +176,9 @@ try {
               <div className="flex items-center gap-2">
                 <Target className="h-4 w-4 text-blue-600" />
                 <span className="text-sm text-gray-600">Business Type:</span>
-                <span className="text-sm font-medium text-blue-600">B2B Startup</span>
+                <span className="text-sm font-medium text-blue-600">
+                  {getUseCase(selectedUseCase || '')?.name}
+                </span>
                 <Button 
                   variant="ghost" 
                   size="sm" 

@@ -156,12 +156,14 @@ export function MetricsGrid({ selectedMetrics = ['mrr', 'arr', 'cashBalance', 'b
       let aiInsights = null
       
       // Parse AI business insights
-      if (storedAIInsights) {
+      if (storedAIInsights && storedAIInsights !== 'undefined' && storedAIInsights !== 'null') {
         try {
           aiInsights = JSON.parse(storedAIInsights)
           console.log('AI business insights loaded:', aiInsights)
         } catch (error) {
           console.error('Failed to parse AI insights:', error)
+          // Clear the invalid data
+          localStorage.removeItem('aiBusinessInsights')
         }
       }
       
