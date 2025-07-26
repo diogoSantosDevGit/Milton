@@ -100,7 +100,7 @@ export function ReportsTab() {
     setConfig(prev => ({ ...prev, [field]: value }))
   }
 
-  const handleCardSelectionChange = (section: keyof ReportConfig, card: string, value: boolean) => {
+  const handleCardSelectionChange = (section: 'overviewCards' | 'financialCards' | 'salesCards' | 'cashFlowCards', card: string, value: boolean) => {
     setConfig(prev => ({
       ...prev,
       [section]: {
@@ -118,15 +118,35 @@ export function ReportsTab() {
   }
 
   const checkDataAvailability = () => {
-    const hasTransactions = !!localStorage.getItem('transactions')
-    const hasCRMData = !!localStorage.getItem('crmDeals')
-    const hasBudgetData = !!localStorage.getItem('budget')
+    // Early return if not on client side
+    if (typeof window === 'undefined' || !isClient) {
+      return {
+        hasTransactions: false,
+        hasCRMData: false,
+        hasBudgetData: false,
+        hasAnyData: false
+      }
+    }
+    
+    try {
+      const hasTransactions = !!localStorage.getItem('transactions')
+      const hasCRMData = !!localStorage.getItem('crmDeals')
+      const hasBudgetData = !!localStorage.getItem('budget')
 
-    return {
-      hasTransactions,
-      hasCRMData,
-      hasBudgetData,
-      hasAnyData: hasTransactions || hasCRMData || hasBudgetData
+      return {
+        hasTransactions,
+        hasCRMData,
+        hasBudgetData,
+        hasAnyData: hasTransactions || hasCRMData || hasBudgetData
+      }
+    } catch (error) {
+      console.error('Error checking data availability:', error)
+      return {
+        hasTransactions: false,
+        hasCRMData: false,
+        hasBudgetData: false,
+        hasAnyData: false
+      }
     }
   }
 

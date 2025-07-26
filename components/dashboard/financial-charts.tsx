@@ -30,13 +30,13 @@ export function FinancialCharts({ type }: ChartProps) {
       const transactions = localStorage.getItem('transactions')
       const budget = localStorage.getItem('budget')
       
-      if (!transactions || !budget) {
+      if (!transactions) {
         setLoading(false)
         return
       }
 
       const transactionData = JSON.parse(transactions)
-      const budgetData = JSON.parse(budget)
+      const budgetData = budget ? JSON.parse(budget) : null
       
       // Get current month
       const now = new Date()
@@ -195,40 +195,30 @@ export function FinancialCharts({ type }: ChartProps) {
       categories[t.category] += t.amount
     })
     
-    // Calculate revenue and expenses
-    const subscriptionRevenue = categories['Subscription'] || 0
-    const serviceRevenue = (categories['One-time Service'] || 0) + (categories['Consulting'] || 0)
-    const totalRevenue = subscriptionRevenue + serviceRevenue
+    // Calculate revenue and expenses - use actual categories from data
+    const totalRevenue = Object.entries(categories)
+      .filter(([cat, amount]) => amount > 0)
+      .reduce((sum, [, amount]) => sum + amount, 0)
     
-    const cogs = Math.abs(categories['COGS'] || 0)
-    const salaries = Math.abs(categories['Salaries'] || 0)
-    const marketing = Math.abs(categories['Marketing'] || 0)
-    const rent = Math.abs(categories['Rent'] || 0)
-    const otherExpenses = Math.abs(
-      Object.entries(categories)
-        .filter(([cat, amount]) => 
-          amount < 0 && 
-          !['COGS', 'Salaries', 'Marketing', 'Rent'].includes(cat)
-        )
-        .reduce((sum, [, amount]) => sum + amount, 0)
-    )
+    const totalExpenses = Math.abs(Object.entries(categories)
+      .filter(([cat, amount]) => amount < 0)
+      .reduce((sum, [, amount]) => sum + amount, 0))
     
-    // Create waterfall data
+    // For waterfall chart, we'll use the actual categories found
     const waterfallData = [
-      { name: 'Revenue', value: totalRevenue },
-      { name: 'COGS', value: -cogs },
-      { name: 'Gross Profit', value: totalRevenue - cogs, isTotal: true }
+      { name: 'Revenue', value: totalRevenue }
     ]
     
-    // Add operating expenses if they exist
-    if (salaries > 0) waterfallData.push({ name: 'Salaries', value: -salaries })
-    if (marketing > 0) waterfallData.push({ name: 'Marketing', value: -marketing })
-    if (rent > 0) waterfallData.push({ name: 'Rent', value: -rent })
-    if (otherExpenses > 0) waterfallData.push({ name: 'Other OpEx', value: -otherExpenses })
+    // Add each expense category as a separate line
+    Object.entries(categories).forEach(([category, amount]) => {
+      if (amount < 0) {
+        waterfallData.push({ name: category, value: amount })
+      }
+    })
     
     // Add final total
-    const netIncome = totalRevenue - cogs - salaries - marketing - rent - otherExpenses
-    waterfallData.push({ name: 'Net Income', value: netIncome, isTotal: true })
+    const netIncome = totalRevenue + totalExpenses
+    waterfallData.push({ name: 'Net Income', value: netIncome })
     
     setData(waterfallData)
   }
@@ -278,7 +268,13 @@ export function FinancialCharts({ type }: ChartProps) {
 
   const generateYTDPerformance = (transactions: any[], budget: any) => {
     const currentYear = new Date().getFullYear()
-    const ytdData = []
+    const ytdData: Array<{
+      month: string
+      actual: number
+      budget: number
+      cumActual: number
+      cumBudget: number
+    }> = []
     
     // Calculate YTD by month
     for (let month = 0; month <= new Date().getMonth(); month++) {
@@ -294,8 +290,18 @@ export function FinancialCharts({ type }: ChartProps) {
         .filter((t: any) => t.amount > 0)
         .reduce((sum: number, t: any) => sum + t.amount, 0)
       
-      const budgetKey = `${monthName} ${currentYear}`
-      const plannedRevenue = budget['MRR']?.[budgetKey] || 0
+      // Use budget data if available, otherwise use a simple projection
+      let plannedRevenue = 0
+      if (budget && budget['MRR']) {
+        const budgetKey = `${monthName} ${currentYear}`
+        plannedRevenue = budget['MRR'][budgetKey] || 0
+      } else {
+        // Simple projection based on average monthly revenue
+        const avgMonthlyRevenue = transactions
+          .filter((t: any) => t.amount > 0)
+          .reduce((sum: number, t: any) => sum + t.amount, 0) / 12
+        plannedRevenue = avgMonthlyRevenue
+      }
       
       ytdData.push({
         month: monthName,

@@ -1,54 +1,17 @@
 // lib/enhanced-data-processor.ts
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
-
-export interface StandardizedData {
-  transactions?: StandardTransaction[]
-  deals?: StandardDeal[]
-  budget?: StandardBudget
-}
-
-export interface StandardTransaction {
-  id: string
-  date: string
-  description: string
-  amount: number
-  category: string
-  reference?: string
-}
-
-export interface StandardDeal {
-  id: string
-  dealName: string
-  phase: string
-  amount: number
-  clientName: string
-  firstAppointment?: string
-  closingDate?: string
-  product?: string
-}
-
-export interface StandardBudget {
-  months: string[]
-  categories: { [category: string]: { [month: string]: number } }
-}
-
-export interface ColumnMapping {
-  originalColumn: string
-  standardField: string
-  confidence: number
-  dataType: 'string' | 'number' | 'date' | 'currency'
-  transformation?: 'date_conversion' | 'currency_conversion' | 'text_cleanup'
-}
-
-export interface DataProcessingResult {
-  fileType: 'transactions' | 'deals' | 'budget'
-  confidence: number
-  suggestedMappings: ColumnMapping[]
-  previewData: any[]
-  issues: string[]
-  needsManualReview: boolean
-}
+import {
+  StandardizedData,
+  StandardTransaction,
+  StandardDeal,
+  StandardBudget,
+  ColumnMapping,
+  DataProcessingResult,
+  FileType,
+  DealPhase,
+  DEAL_PHASES
+} from '@/types/schema'
 
 export class EnhancedDataProcessor {
   private aiEndpoint = '/api/openai-analyze'
@@ -63,7 +26,9 @@ export class EnhancedDataProcessor {
       }
       // 1. Analyze with AI
       let aiAnalysis = await this.analyzeWithAI(fileName, headers, data.slice(0, 5))
-      if (!aiAnalysis.mappings || aiAnalysis.mappings.length === 0) {
+      if ((!aiAnalysis.mappings && !aiAnalysis.columnMappings) || 
+          (aiAnalysis.mappings && aiAnalysis.mappings.length === 0) ||
+          (aiAnalysis.columnMappings && aiAnalysis.columnMappings.length === 0)) {
         console.warn('AI returned no mappings — falling back to rules.')
         aiAnalysis = this.fallbackAnalysis(fileName, headers, data.slice(0, 5))
       }
@@ -86,6 +51,32 @@ export class EnhancedDataProcessor {
         throw new Error(`Failed to process file: ${error.message}`)
       } else {
         throw new Error('Failed to process file: Unknown error')
+      }
+    }
+  }
+
+  async callAIForMapping(headers: string[], sampleData: any[]): Promise<{
+    detectedType: string
+    suggestedMappings: ColumnMapping[]
+  }> {
+    try {
+      const result = await this.processFile('uploaded_file', headers, sampleData)
+      return {
+        detectedType: result.fileType,
+        suggestedMappings: result.suggestedMappings
+      }
+    } catch (error) {
+      console.error('AI mapping failed, using fallback:', error)
+      // Return a basic fallback mapping
+      return {
+        detectedType: 'transactions',
+        suggestedMappings: headers.map(header => ({
+          originalColumn: header,
+          standardField: this.mapColumnFallback(header, 'transactions'),
+          confidence: 0.5,
+          dataType: this.detectDataType(header, sampleData),
+          transformation: 'none'
+        }))
       }
     }
   }
@@ -182,9 +173,21 @@ export class EnhancedDataProcessor {
         throw new Error(`AI analysis failed: ${response.status}`)
       }
 
-      const json = await response.json()
-      console.log('[AI DEBUG] Response received from OpenAI:', json)
-      return json
+          const json = await response.json()
+    console.log('[AI DEBUG] Response received from OpenAI:', json)
+    
+    // Handle API response format mismatch
+    if (json.columnMappings && !json.mappings) {
+      json.mappings = json.columnMappings.map((mapping: any) => ({
+        originalColumn: mapping.originalColumn || mapping.column,
+        standardField: mapping.standardField || mapping.field,
+        confidence: mapping.confidence || 0.8,
+        dataType: mapping.dataType || 'string',
+        transformation: mapping.transformation || 'none'
+      }))
+    }
+    
+    return json
     } catch (error) {
       console.warn('AI analysis failed, using fallback:', error)
       return this.fallbackAnalysis(fileName, headers, sampleData)
@@ -208,7 +211,7 @@ Respond with ONLY valid JSON:
   "fileType": "transactions|deals|budget",
   "confidence": 0.85,
   "reasoning": "Brief explanation of analysis",
-  "mappings": [
+  "columnMappings": [
     {
       "originalColumn": "exact header name",
       "standardField": "mapped field name",
@@ -243,7 +246,7 @@ Respond with ONLY valid JSON:
     }
 
     // Create basic mappings
-    const mappings = headers.map(header => ({
+    const columnMappings = headers.map(header => ({
       originalColumn: header,
       standardField: this.mapColumnFallback(header, fileType),
       confidence: 0.5,
@@ -255,7 +258,7 @@ Respond with ONLY valid JSON:
       fileType,
       confidence,
       reasoning: 'Fallback rule-based analysis',
-      mappings,
+      columnMappings,
       issues: [],
       businessInsights: {
         detectedLanguage: 'unknown',
@@ -309,8 +312,8 @@ Respond with ONLY valid JSON:
   private validateAIAnalysis(aiResult: any, headers: string[], data: any[]): any {
     const issues = []
     
-    // Validate required mappings exist
-    const mappings = aiResult.mappings || []
+    // Handle both mappings and columnMappings formats
+    const mappings = aiResult.mappings || aiResult.columnMappings || []
     const mappedFields = mappings.map((m: any) => m.standardField)
     
     if (aiResult.fileType === 'deals') {
@@ -339,7 +342,7 @@ Respond with ONLY valid JSON:
   async convertToStandardFormat(
     data: any[], 
     mappings: ColumnMapping[], 
-    fileType: 'transactions' | 'deals' | 'budget'
+    fileType: FileType
   ): Promise<StandardizedData> {
     switch (fileType) {
       case 'deals':

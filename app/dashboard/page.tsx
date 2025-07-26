@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { MetricsGrid } from '@/components/dashboard/metrics-grid'
 import { LogoutButton } from '@/components/dashboard/logout-button'
-import { FileUpload } from '@/components/dashboard/file-upload-old'
+import FileUpload from '@/components/dashboard/file-upload'
 import { UploadedFilesDisplay } from '@/components/dashboard/uploaded-files-display'
 import { FinancialCharts } from '@/components/dashboard/financial-charts'
 import { SalesPipeline } from '@/components/dashboard/sales-pipeline'
@@ -31,9 +31,9 @@ export default function DashboardPage() {
     'ltmRevenue', 'netMargin', 'customers'
   ])
   const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // Start with loading false for development
   const [isUploadOpen, setIsUploadOpen] = useState(true) // Default to open
-  const [isReportsOpen, setIsReportsOpen] = useState(false)
+  const [isReportsOpen, setIsReportsOpen] = useState(true) // Default to open
   const [hasUploadedData, setHasUploadedData] = useState(false)
   
   // Use case selection state
@@ -41,22 +41,9 @@ export default function DashboardPage() {
   const [useCaseConfirmed, setUseCaseConfirmed] = useState(false)
 
   useEffect(() => {
-    // Check authentication client-side
+    // Temporarily skip auth check for development
     const checkAuth = async () => {
-      try {
-        const { createClient } = await import('@/lib/supabase/client')
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-
-        if (!user) {
-          router.push('/auth/login')
-        } else {
-          setUser(user)
-        }
-      } catch (error) {
-        console.error('Auth check failed:', error)
-        router.push('/auth/login')
-      }
+      console.log('⚠️ Skipping auth check for development')
       setLoading(false)
     }
 
@@ -72,6 +59,86 @@ export default function DashboardPage() {
       // If no data, keep upload section open by default
       if (!hasData) {
         setIsUploadOpen(true)
+        
+        // For testing - add sample transaction data for testing
+        console.log('🔧 Adding sample transaction data for testing')
+        const currentDate = new Date()
+        const currentYear = currentDate.getFullYear()
+        const currentMonth = currentDate.getMonth()
+        
+        // Create sample data for multiple months to populate charts
+        const sampleTransactions = []
+        
+        // Add data for the last 6 months (for burn rate chart)
+        for (let i = 5; i >= 0; i--) {
+          const monthDate = new Date(currentYear, currentMonth - i, 1)
+          const month = monthDate.getMonth()
+          const year = monthDate.getFullYear()
+          
+          // Add revenue for this month
+          sampleTransactions.push({
+            id: `rev-${i}`,
+            date: `${year}-${String(month + 1).padStart(2, '0')}-15`,
+            name: `Revenue ${monthDate.toLocaleString('default', { month: 'long' })}`,
+            description: `Revenue ${monthDate.toLocaleString('default', { month: 'long' })}`,
+            amount: 2000 + (i * 500), // Increasing revenue
+            category: 'Revenue',
+            reference: `REV-${i}`
+          })
+          
+          // Add expenses for this month
+          sampleTransactions.push({
+            id: `exp-${i}`,
+            date: `${year}-${String(month + 1).padStart(2, '0')}-20`,
+            name: `Expenses ${monthDate.toLocaleString('default', { month: 'long' })}`,
+            description: `Expenses ${monthDate.toLocaleString('default', { month: 'long' })}`,
+            amount: -(1500 + (i * 200)), // Increasing expenses
+            category: 'Expenses',
+            reference: `EXP-${i}`
+          })
+        }
+        
+        // Add extra data specifically for current month to ensure charts have data
+        const currentMonthName = new Date(currentYear, currentMonth, 1).toLocaleString('default', { month: 'long' })
+        sampleTransactions.push({
+          id: 'current-rev-1',
+          date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-05`,
+          name: `Current Month Revenue 1`,
+          description: `Current Month Revenue 1`,
+          amount: 3000,
+          category: 'Revenue',
+          reference: 'CURRENT-REV-1'
+        })
+        sampleTransactions.push({
+          id: 'current-rev-2',
+          date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-10`,
+          name: `Current Month Revenue 2`,
+          description: `Current Month Revenue 2`,
+          amount: 2500,
+          category: 'Revenue',
+          reference: 'CURRENT-REV-2'
+        })
+        sampleTransactions.push({
+          id: 'current-exp-1',
+          date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-15`,
+          name: `Current Month Expenses 1`,
+          description: `Current Month Expenses 1`,
+          amount: -1200,
+          category: 'Expenses',
+          reference: 'CURRENT-EXP-1'
+        })
+        sampleTransactions.push({
+          id: 'current-exp-2',
+          date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-20`,
+          name: `Current Month Expenses 2`,
+          description: `Current Month Expenses 2`,
+          amount: -800,
+          category: 'Expenses',
+          reference: 'CURRENT-EXP-2'
+        })
+        
+        localStorage.setItem('transactions', JSON.stringify(sampleTransactions))
+        console.log('✅ Sample transaction data added')
       }
     }
 
@@ -106,7 +173,7 @@ export default function DashboardPage() {
     checkAuth()
     checkUploadedData()
     checkStoredUseCase()
-  }, [router])
+  }, [])
 
   // Handle use case selection
   const handleUseCaseSelect = (useCaseId: string) => {
@@ -136,8 +203,10 @@ export default function DashboardPage() {
     )
   }
 
+  // Temporarily allow rendering without user for development
   if (!user) {
-    return null
+    console.log('⚠️ No user, but rendering anyway for development')
+    // return null // Commented out for development
   }
 
   return (
@@ -152,8 +221,8 @@ export default function DashboardPage() {
               </h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">{user.email}</span>
-              <LogoutButton />
+              <span className="text-sm text-gray-600">{user?.email || 'Development Mode'}</span>
+              {user && <LogoutButton />}
             </div>
           </div>
         </div>
@@ -187,16 +256,14 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Use Case Selection Section */}
-          {!useCaseConfirmed && (
-            <div className="mb-8">
-              <UseCaseSelector
-                selectedUseCase={selectedUseCase}
-                onUseCaseSelect={handleUseCaseSelect}
-                onConfirm={handleUseCaseConfirm}
-              />
-            </div>
-          )}
+          {/* Use Case Selection Section - Always show for now */}
+          <div className="mb-8">
+            <UseCaseSelector
+              selectedUseCase={selectedUseCase}
+              onUseCaseSelect={handleUseCaseSelect}
+              onConfirm={handleUseCaseConfirm}
+            />
+          </div>
 
           {/* Show business type badge when confirmed */}
           {useCaseConfirmed && selectedUseCase && (

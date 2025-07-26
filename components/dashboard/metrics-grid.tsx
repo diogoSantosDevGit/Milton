@@ -7,7 +7,8 @@ import { DollarSign, TrendingUp, CreditCard, Activity, Users, Target, Wallet, Pe
 interface Transaction {
   id: string
   date: string
-  name: string
+  name?: string
+  description?: string
   amount: number
   reference: string
   category: string
@@ -108,13 +109,14 @@ export function MetricsGrid({ selectedMetrics = ['mrr', 'arr', 'cashBalance', 'b
 
   const validateTransaction = (tx: any): tx is Transaction => {
     // Check if transaction has required properties and they're valid
+    // Note: enhanced-data-processor uses 'description' instead of 'name'
     return (
       tx &&
       typeof tx === 'object' &&
       tx.hasOwnProperty('id') &&
       tx.hasOwnProperty('date') &&
       tx.hasOwnProperty('amount') &&
-      tx.hasOwnProperty('name') &&
+      (tx.hasOwnProperty('name') || tx.hasOwnProperty('description')) &&
       tx.hasOwnProperty('category') &&
       !isNaN(safeParseFloat(tx.amount))
     )
@@ -374,7 +376,7 @@ export function MetricsGrid({ selectedMetrics = ['mrr', 'arr', 'cashBalance', 'b
         : new Set(
             transactions
               .filter(t => safeParseFloat(t.amount) > 0 && isRevenue(t))
-              .map(t => safeToLowerCase(t.name).trim())
+              .map(t => safeToLowerCase(t.name || t.description || '').trim())
               .filter(name => name !== '')
           ).size
       

@@ -20,6 +20,29 @@ interface ReportConfig {
   includeFinancial: boolean
   includeSales: boolean
   includeCashFlow: boolean
+  // Enhanced card selections
+  overviewCards: {
+    metricsGrid: boolean
+    performanceCharts: boolean
+  }
+  financialCards: {
+    revenueBreakdown: boolean
+    expenseAnalysis: boolean
+    varianceReport: boolean
+  }
+  salesCards: {
+    pipelineMetrics: boolean
+    pipelineByStage: boolean
+    pipelineByClosingDate: boolean
+    dealSources: boolean
+  }
+  cashFlowCards: {
+    currentBalance: boolean
+    monthlyBurnRate: boolean
+    cashRunway: boolean
+    monthlyTrend: boolean
+    inflowOutflowBreakdown: boolean
+  }
 }
 
 export function PDFReportGenerator() {
@@ -30,7 +53,29 @@ export function PDFReportGenerator() {
     includeOverview: true,
     includeFinancial: true,
     includeSales: true,
-    includeCashFlow: true
+    includeCashFlow: true,
+    overviewCards: {
+      metricsGrid: true,
+      performanceCharts: true
+    },
+    financialCards: {
+      revenueBreakdown: true,
+      expenseAnalysis: true,
+      varianceReport: true
+    },
+    salesCards: {
+      pipelineMetrics: true,
+      pipelineByStage: true,
+      pipelineByClosingDate: true,
+      dealSources: true
+    },
+    cashFlowCards: {
+      currentBalance: true,
+      monthlyBurnRate: true,
+      cashRunway: true,
+      monthlyTrend: true,
+      inflowOutflowBreakdown: true
+    }
   })
 
   const [isGenerating, setIsGenerating] = useState(false)
@@ -48,15 +93,35 @@ export function PDFReportGenerator() {
   }
 
   const checkDataAvailability = () => {
-    const hasTransactions = !!localStorage.getItem('transactions')
-    const hasCRMData = !!localStorage.getItem('crmDeals')
-    const hasBudgetData = !!localStorage.getItem('budget')
+    // Early return if not on client side
+    if (typeof window === 'undefined' || !isClient) {
+      return {
+        hasTransactions: false,
+        hasCRMData: false,
+        hasBudgetData: false,
+        hasAnyData: false
+      }
+    }
+    
+    try {
+      const hasTransactions = !!localStorage.getItem('transactions')
+      const hasCRMData = !!localStorage.getItem('crmDeals')
+      const hasBudgetData = !!localStorage.getItem('budget')
 
-    return {
-      hasTransactions,
-      hasCRMData,
-      hasBudgetData,
-      hasAnyData: hasTransactions || hasCRMData || hasBudgetData
+      return {
+        hasTransactions,
+        hasCRMData,
+        hasBudgetData,
+        hasAnyData: hasTransactions || hasCRMData || hasBudgetData
+      }
+    } catch (error) {
+      console.error('Error checking data availability:', error)
+      return {
+        hasTransactions: false,
+        hasCRMData: false,
+        hasBudgetData: false,
+        hasAnyData: false
+      }
     }
   }
 
