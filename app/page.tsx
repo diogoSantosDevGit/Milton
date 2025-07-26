@@ -4,13 +4,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MetricsGrid } from '@/components/dashboard/metrics-grid'
 import { LogoutButton } from '@/components/dashboard/logout-button'
-import { FileUpload } from '@/components/dashboard/file-upload'
+import { FileUpload } from '@/components/dashboard/file-upload-old'
 import { FinancialCharts } from '@/components/dashboard/financial-charts'
 import { SalesPipeline } from '@/components/dashboard/sales-pipeline'
 import { CashFlowAnalysis } from '@/components/dashboard/cash-flow-analysis'
 import { UploadedFilesDisplay } from '@/components/dashboard/uploaded-files-display'
-
-
 
 
 export default async function DashboardPage() {

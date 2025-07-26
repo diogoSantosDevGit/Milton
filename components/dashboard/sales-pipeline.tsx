@@ -31,8 +31,35 @@ interface PhaseColors {
   [key: string]: string
 }
 
+// Phase normalization helper
+const phaseAliases: { [key: string]: string } = {
+  'lead gen': 'Lead Generation',
+  'leadgen': 'Lead Generation',
+  'lead-generation': 'Lead Generation',
+  'leadgeneration': 'Lead Generation',
+  'lead generation': 'Lead Generation',
+  'lead gen.': 'Lead Generation',
+  'lead-gen': 'Lead Generation',
+  'lead': 'Lead Generation',
+  'first contact': 'First Contact',
+  'need qualification': 'Need Qualification',
+  'qualifizierung': 'Need Qualification',
+  'verhandlung': 'Negotiation',
+  'negotiation': 'Negotiation',
+  'deal': 'Deal',
+  'gewonnen': 'Deal',
+  'kein deal': 'No Deal',
+  'no deal': 'No Deal'
+}
+
+const normalizePhase = (value: string): string => {
+  const key = value.trim().toLowerCase()
+  return phaseAliases[key] || value
+}
+
 export function SalesPipeline() {
   const [deals, setDeals] = useState<Deal[]>([])
+  const [allDeals, setAllDeals] = useState<Deal[]>([])
   const [showWeighted, setShowWeighted] = useState(false)
   const [colorMode, setColorMode] = useState<'individual' | 'corporate'>('individual')
   const [corporateColor, setCorporateColor] = useState('#3b82f6')
@@ -45,6 +72,19 @@ export function SalesPipeline() {
     topDeals: [],
     pipelineForecast: []
   })
+
+  // Currency format state and helper
+  const [formatStyle, setFormatStyle] = useState<'short' | 'swiss' | 'mio'>('short')
+
+  const formatCurrency = (value: number): string => {
+    if (formatStyle === 'swiss') {
+      return `€${Math.round(value / 1000).toLocaleString('de-CH')}'000`
+    }
+    if (formatStyle === 'mio') {
+      return `€${(value / 1_000_000).toFixed(1)} Mio`
+    }
+    return `€${(value / 1000).toFixed(0)}k`
+  }
 
   // Default individual colors for each phase
   const [phaseColors, setPhaseColors] = useState<PhaseColors>({
@@ -191,8 +231,10 @@ export function SalesPipeline() {
       if (!crmData) return
 
       const dealsData: Deal[] = JSON.parse(crmData)
-      setDeals(dealsData)
-
+      const today = new Date()
+      setAllDeals(dealsData)
+      const futureDeals = dealsData.filter(d => new Date(d.closingDate) > today)
+      setDeals(futureDeals)
       // Calculate metrics
       calculatePipelineMetrics(dealsData)
     }
@@ -201,67 +243,87 @@ export function SalesPipeline() {
   }, [])
 
   const calculatePipelineMetrics = (dealsData: Deal[]) => {
+    console.log('[CRM DEALS]', dealsData);
+    console.log('[CRM DEAL PHASES]', dealsData.map(d => d.phase));
+    console.log('[CRM NORMALIZED PHASES]', dealsData.map(d => normalizePhase(d.phase || '')));
     // Pipeline by phase
     const phaseOrder = ['Lead Generation', 'First Contact', 'Need Qualification', 'Negotiation', 'Deal', 'No Deal']
+    // Only consider deals with closingDate in the future
+    const today = new Date()
+    const futureDeals = dealsData.filter(d => new Date(d.closingDate) > today)
+    console.log('[PHASE CHECK]', Array.from(new Set(futureDeals.map(d => d.phase))))
     const phaseData = phaseOrder.map(phase => {
-      const phaseDeals = dealsData.filter(d => d.phase === phase)
+      const phaseDeals = futureDeals.filter(d => normalizePhase(d.phase || '') === phase)
+      // Debug for Lead Generation phase
+      if (phase === 'Lead Generation') {
+        console.log('Lead Gen matches:', phaseDeals.map(d => ({ amount: d.amount, type: typeof d.amount })))
+      }
       return {
         phase,
         count: phaseDeals.length,
-        value: phaseDeals.reduce((sum, d) => sum + d.amount, 0),
-        avgValue: phaseDeals.length > 0 ? phaseDeals.reduce((sum, d) => sum + d.amount, 0) / phaseDeals.length : 0
+        value: phaseDeals.reduce((sum, d) => sum + Number(d.amount), 0),
+        avgValue: phaseDeals.length > 0 ? phaseDeals.reduce((sum, d) => sum + Number(d.amount), 0) / phaseDeals.length : 0
       }
     })
 
     // Calculate conversion funnel (excluding 'No Deal')
     const activePhasesData = phaseOrder.slice(0, -1) // Exclude 'No Deal'
     
-    const funnelData = activePhasesData.map((phase, index) => {
-      const phaseDeals = dealsData.filter(d => d.phase === phase)
+    const funnelData = activePhasesData.map((phase) => {
+      const phaseDeals = futureDeals.filter(d => normalizePhase(d.phase || '') === phase)
       const count = phaseDeals.length
-      const value = phaseDeals.reduce((sum, d) => sum + d.amount, 0)
-      
-      // For funnel visualization, we want cumulative counts from bottom to top
-      const cumulativeCount = activePhasesData.slice(index).reduce((sum, p) => {
-        return sum + dealsData.filter(d => d.phase === p).length
+      const totalDeals = futureDeals.length
+      const value = phaseDeals.reduce((sum, d) => {
+        const amount = Number(d.amount)
+        return sum + (isNaN(amount) ? 0 : amount)
       }, 0)
-      
+
       return {
         phase,
-        count: count,
-        cumulativeCount: cumulativeCount,
-        value: value,
-        percentage: dealsData.filter(d => d.phase !== 'No Deal').length > 0 ? 
-          (cumulativeCount / dealsData.filter(d => d.phase !== 'No Deal').length * 100).toFixed(1) : 0,
+        count,
+        cumulativeCount: count,
+        value,
+        percentage: totalDeals > 0 ? ((count / totalDeals) * 100).toFixed(1) : '0.0',
         avgDealSize: count > 0 ? Math.round(value / count) : 0
       }
     })
 
-    // Deals by product (only closed deals)
-    const closedDealsForProducts = dealsData.filter(d => d.phase === 'Deal')
+    // Deals by product (only closed deals in the past)
+    const closedDealsForProducts = dealsData.filter(
+      d =>
+        normalizePhase(d.phase || '') === 'Deal' &&
+        d.closingDate &&
+        new Date(d.closingDate) <= today
+    )
     const productData = closedDealsForProducts.reduce((acc: any[], deal) => {
       const existing = acc.find(p => p.product === deal.product)
       if (existing) {
         existing.count += 1
-        existing.value += deal.amount
+        existing.value += Number(deal.amount)
       } else {
         acc.push({
           product: deal.product,
           count: 1,
-          value: deal.amount
+          value: Number(deal.amount)
         })
       }
       return acc
     }, []).sort((a, b) => b.value - a.value) // Sort by value descending
 
-    // Calculate average sales cycle (for closed deals)
-    const closedDeals = dealsData.filter(d => d.phase === 'Deal' && d.firstAppointment && d.closingDate)
+    // Calculate average sales cycle (for closed deals in the past)
+    const closedDeals = dealsData.filter(
+      d =>
+        normalizePhase(d.phase || '') === 'Deal' &&
+        d.firstAppointment &&
+        d.closingDate &&
+        new Date(d.closingDate) <= today
+    )
     const salesCycles = closedDeals.map(d => {
       const start = new Date(d.firstAppointment)
       const end = new Date(d.closingDate)
       return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
     })
-    const avgSalesCycle = salesCycles.length > 0 ? 
+    const avgSalesCycle = salesCycles.length > 0 ?
       Math.round(salesCycles.reduce((sum, days) => sum + days, 0) / salesCycles.length) : 0
 
     // Pipeline forecast by closing date
@@ -288,15 +350,19 @@ export function SalesPipeline() {
         })
         
         // Add deals to appropriate month and phase
-        dealsData.forEach(deal => {
+        futureDeals.forEach(deal => {
           if (deal.closingDate) {
             const dealDate = new Date(deal.closingDate)
             const dealYearMonth = `${dealDate.getFullYear()}-${String(dealDate.getMonth() + 1).padStart(2, '0')}`
-            
-            if (dealYearMonth === yearMonth && deal.phase !== 'No Deal' && deal.phase !== 'Deal') {
-              monthData[deal.phase] = (monthData[deal.phase] || 0) + deal.amount
-              monthData[`${deal.phase}_weighted`] = (monthData[`${deal.phase}_weighted`] || 0) + 
-                (deal.amount * (phaseWeights[deal.phase] || 0))
+            const normPhase = normalizePhase(deal.phase || '')
+            if (
+              dealYearMonth === yearMonth &&
+              normPhase !== 'No Deal' &&
+              normPhase !== 'Deal'
+            ) {
+              monthData[normPhase] = (monthData[normPhase] || 0) + Number(deal.amount)
+              monthData[`${normPhase}_weighted`] = (monthData[`${normPhase}_weighted`] || 0) +
+                (Number(deal.amount) * (phaseWeights[normPhase] || 0))
             }
           }
         })
@@ -313,14 +379,14 @@ export function SalesPipeline() {
     })()
 
     // Top 10 deals
-    const topDeals = [...dealsData]
+    const topDeals = [...futureDeals]
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 10)
       .map(d => ({
         name: d.dealName.substring(0, 30) + '...',
         client: d.clientName,
         amount: d.amount,
-        phase: d.phase
+        phase: normalizePhase(d.phase || '')
       }))
 
     setMetrics({
@@ -466,6 +532,20 @@ export function SalesPipeline() {
         </div>
       </div>
 
+      {/* Currency Format Dropdown */}
+      <div className="flex justify-end mb-2">
+        <label className="mr-2 text-sm text-gray-600">Amount Format:</label>
+        <select
+          value={formatStyle}
+          onChange={e => setFormatStyle(e.target.value as any)}
+          className="text-sm border rounded px-2 py-1"
+        >
+          <option value="short">€1.2k</option>
+          <option value="swiss">€1'000</option>
+          <option value="mio">€1.2 Mio</option>
+        </select>
+      </div>
+
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
@@ -484,7 +564,10 @@ export function SalesPipeline() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {deals.filter(d => d.phase !== 'No Deal' && d.phase !== 'Deal').length}
+              {allDeals.filter(d => {
+                const phase = normalizePhase(d.phase || '')
+                return phase !== 'No Deal' && phase !== 'Deal'
+              }).length}
             </div>
           </CardContent>
         </Card>
@@ -502,8 +585,16 @@ export function SalesPipeline() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {((deals.filter(d => d.phase === 'Deal').length / 
-                deals.filter(d => d.phase === 'Deal' || d.phase === 'No Deal').length) * 100).toFixed(1)}%
+              {(() => {
+                // Only include deals closed in the past (Deal or No Deal)
+                const closedPast = allDeals.filter(d =>
+                  ['Deal', 'No Deal'].includes(normalizePhase(d.phase || '')) &&
+                  d.closingDate &&
+                  new Date(d.closingDate) <= new Date()
+                )
+                const wins = closedPast.filter(d => normalizePhase(d.phase || '') === 'Deal')
+                return closedPast.length > 0 ? ((wins.length / closedPast.length) * 100).toFixed(1) : '0.0'
+              })()}%
             </div>
           </CardContent>
         </Card>
@@ -525,7 +616,7 @@ export function SalesPipeline() {
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium">{stage.phase}</span>
                     <span className="text-sm text-gray-600">
-                      {stage.cumulativeCount} deals ({stage.percentage}%)
+                      {stage.cumulativeCount} deals ({stage.percentage}%) – {formatCurrency(stage.value)}
                     </span>
                   </div>
                   <div className="relative h-10 bg-gray-200 rounded-lg overflow-hidden">
@@ -536,9 +627,9 @@ export function SalesPipeline() {
                         backgroundColor: currentColors[stage.phase]
                       }}
                     >
-                      <span className="text-xs px-2">
-                        €{(stage.value / 1000).toFixed(0)}k
-                      </span>
+                      {/* <span className="text-xs px-2">
+                        {formatCurrency(stage.value)}
+                      </span> */}
                     </div>
                   </div>
                   {!isLast && (
@@ -565,9 +656,9 @@ export function SalesPipeline() {
               <BarChart data={metrics.pipelineByPhase}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="phase" angle={-45} textAnchor="end" height={100} />
-                <YAxis />
-                <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
-                <Bar dataKey="value" name="Total Value (€)">
+                <YAxis tickFormatter={(value) => formatCurrency(value)} />
+                <Tooltip formatter={(value: any) => formatCurrency(Number(value))} />
+                <Bar dataKey="value" name="Total Value">
                   {metrics.pipelineByPhase.map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={currentColors[entry.phase]} />
                   ))}
@@ -619,9 +710,9 @@ export function SalesPipeline() {
             <BarChart data={metrics.pipelineForecast}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis tickFormatter={(value) => `€${(value / 1000).toFixed(0)}k`} />
+              <YAxis tickFormatter={(value) => formatCurrency(value)} />
               <Tooltip 
-                formatter={(value: any) => `€${value.toLocaleString()}`}
+                formatter={(value: any) => formatCurrency(Number(value))}
                 content={({ active, payload, label }: any) => {
                   if (active && payload && payload.length) {
                     const totalKey = showWeighted ? 'total_weighted' : 'total'
@@ -630,14 +721,14 @@ export function SalesPipeline() {
                         <p className="font-semibold mb-2">{label}</p>
                         {payload.map((entry: any, index: number) => (
                           <p key={index} className="text-sm" style={{ color: entry.color }}>
-                            {entry.name}: €{entry.value.toLocaleString()}
+                            {entry.name}: {formatCurrency(entry.value)}
                             {showWeighted && phaseWeights[entry.name] && (
                               <span className="text-gray-500"> ({(phaseWeights[entry.name] * 100)}%)</span>
                             )}
                           </p>
                         ))}
                         <p className="text-sm font-semibold mt-2 pt-2 border-t">
-                          Total: €{payload[0].payload[totalKey].toLocaleString()}
+                          Total: {formatCurrency(payload[0].payload[totalKey])}
                         </p>
                       </div>
                     )
@@ -706,9 +797,9 @@ export function SalesPipeline() {
                   tick={{ fontSize: 11, fill: '#000' }}
                   interval={0}
                 />
-                <YAxis tickFormatter={(value) => `€${(value / 1000).toFixed(0)}k`} />
+                <YAxis tickFormatter={(value) => formatCurrency(value)} />
                 <Tooltip 
-                  formatter={(value: any) => [`€${value.toLocaleString()}`, 'Deal Value']}
+                  formatter={(value: any) => [formatCurrency(Number(value)), 'Deal Value']}
                   labelStyle={{ color: '#000' }}
                 />
                 <Bar 
@@ -719,7 +810,7 @@ export function SalesPipeline() {
                   <LabelList 
                     dataKey="value" 
                     position="top" 
-                    formatter={(value: any) => `€${Math.round(value / 1000)}k`}
+                    formatter={(value: any) => formatCurrency(Number(value))}
                     style={{ fontSize: '12px', fontWeight: 'bold', fill: '#000' }}
                   />
                 </Bar>
@@ -753,7 +844,7 @@ export function SalesPipeline() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold">€{deal.amount.toLocaleString()}</p>
+                    <p className="text-sm font-bold">{formatCurrency(deal.amount)}</p>
                     <p className="text-xs text-gray-500">{deal.phase}</p>
                   </div>
                 </div>
