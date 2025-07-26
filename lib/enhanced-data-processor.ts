@@ -12,6 +12,7 @@ import {
   DealPhase,
   DEAL_PHASES
 } from '@/types/schema'
+import { categorizeTransaction } from './accounting-definitions'
 
 export class EnhancedDataProcessor {
   private aiEndpoint = '/api/openai-analyze'
@@ -550,7 +551,13 @@ Respond with ONLY valid JSON:
             transaction.description = processedValue.toString()
             break
           case 'category':
-            transaction.category = processedValue.toString()
+            // Use the accounting definitions for better categorization
+            const originalCategory = processedValue.toString()
+            transaction.category = categorizeTransaction(
+              transaction.description, 
+              transaction.amount, 
+              originalCategory
+            )
             break
           case 'reference':
             transaction.reference = processedValue.toString()
@@ -667,5 +674,71 @@ Respond with ONLY valid JSON:
     
     const parsed = parseFloat(cleanValue)
     return isNaN(parsed) ? 0 : parsed
+  }
+
+  private mapCategory(category: string): string {
+    const lowerCategory = category.toLowerCase().trim()
+    
+    // Map German revenue categories
+    if (lowerCategory.includes('trainings') || lowerCategory.includes('training')) {
+      return 'Revenue'
+    }
+    if (lowerCategory.includes('subscription') || lowerCategory.includes('abonnement')) {
+      return 'Revenue'
+    }
+    if (lowerCategory.includes('programme') || lowerCategory.includes('programm')) {
+      return 'Revenue'
+    }
+    if (lowerCategory.includes('coaching')) {
+      return 'Revenue'
+    }
+    
+    // Map German expense categories
+    if (lowerCategory.includes('gehälter') || lowerCategory.includes('gehalt') || lowerCategory.includes('lohn')) {
+      return 'Salaries'
+    }
+    if (lowerCategory.includes('marketing')) {
+      return 'Marketing'
+    }
+    if (lowerCategory.includes('miete') || lowerCategory.includes('rent')) {
+      return 'Rent'
+    }
+    if (lowerCategory.includes('software') || lowerCategory.includes('licence') || lowerCategory.includes('lizenz')) {
+      return 'Software'
+    }
+    if (lowerCategory.includes('sonstiges') || lowerCategory.includes('other') || lowerCategory.includes('misc')) {
+      return 'Other OpEx'
+    }
+    
+    // Map English revenue categories (fallback)
+    if (lowerCategory.includes('revenue') || lowerCategory.includes('income') || lowerCategory.includes('sales')) {
+      return 'Revenue'
+    }
+    if (lowerCategory.includes('consulting') || lowerCategory.includes('service') || lowerCategory.includes('fee')) {
+      return 'Revenue'
+    }
+    if (lowerCategory.includes('subscription') || lowerCategory.includes('recurring')) {
+      return 'Revenue'
+    }
+    
+    // Map English expense categories (fallback)
+    if (lowerCategory.includes('cost') || lowerCategory.includes('cogs') || lowerCategory.includes('goods')) {
+      return 'COGS'
+    }
+    if (lowerCategory.includes('salary') || lowerCategory.includes('wage') || lowerCategory.includes('payroll')) {
+      return 'Salaries'
+    }
+    if (lowerCategory.includes('marketing') || lowerCategory.includes('advertising') || lowerCategory.includes('promotion')) {
+      return 'Marketing'
+    }
+    if (lowerCategory.includes('rent') || lowerCategory.includes('lease') || lowerCategory.includes('office')) {
+      return 'Rent'
+    }
+    if (lowerCategory.includes('expense') || lowerCategory.includes('expenses')) {
+      return 'Other OpEx'
+    }
+    
+    // Default mapping - if positive amount, treat as revenue; if negative, treat as expense
+    return category
   }
 }

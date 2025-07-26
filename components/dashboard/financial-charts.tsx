@@ -242,28 +242,53 @@ export function FinancialCharts({ type }: ChartProps) {
       .filter((t: any) => t.amount < 0)
       .reduce((sum: number, t: any) => sum + t.amount, 0))
     
-    // Compare with budget
-    if (budget['MRR'] && budget['MRR'][currentMonth]) {
-      variances.push({
-        metric: 'Revenue',
-        budget: budget['MRR'][currentMonth],
-        actual: actualRevenue,
-        variance: actualRevenue - budget['MRR'][currentMonth],
-        variancePercent: ((actualRevenue / budget['MRR'][currentMonth] - 1) * 100).toFixed(1)
-      })
+    // Compare with budget - try different budget key formats
+    const budgetKeys = ['MRR', 'mrr', 'Monthly Revenue', 'Revenue']
+    let budgetRevenue = 0
+    let budgetKey = null
+    
+    for (const key of budgetKeys) {
+      if (budget[key] && budget[key][currentMonth]) {
+        budgetRevenue = budget[key][currentMonth]
+        budgetKey = key
+        break
+      }
     }
     
-    if (budget['OPEX Total'] && budget['OPEX Total'][currentMonth]) {
-      variances.push({
-        metric: 'Operating Expenses',
-        budget: Math.abs(budget['OPEX Total'][currentMonth]),
-        actual: actualExpenses,
-        variance: actualExpenses - Math.abs(budget['OPEX Total'][currentMonth]),
-        variancePercent: ((actualExpenses / Math.abs(budget['OPEX Total'][currentMonth]) - 1) * 100).toFixed(1)
-      })
+          if (budgetRevenue > 0) {
+        variances.push({
+          metric: 'Revenue',
+          budget: budgetRevenue,
+          actual: actualRevenue,
+          variance: actualRevenue - budgetRevenue,
+          variancePercent: ((actualRevenue / budgetRevenue - 1) * 100).toFixed(1)
+        })
+      }
+    
+    // Try different expense budget keys
+    const expenseKeys = ['OPEX Total', 'Total FC', 'Total Costs', 'Expenses', 'Total Expenses']
+    let budgetExpenses = 0
+    let expenseKey = null
+    
+    for (const key of expenseKeys) {
+      if (budget[key] && budget[key][currentMonth]) {
+        budgetExpenses = Math.abs(budget[key][currentMonth])
+        expenseKey = key
+        break
+      }
     }
     
-    setData(variances)
+          if (budgetExpenses > 0) {
+        variances.push({
+          metric: 'Operating Expenses',
+          budget: budgetExpenses,
+          actual: actualExpenses,
+          variance: actualExpenses - budgetExpenses,
+          variancePercent: ((actualExpenses / budgetExpenses - 1) * 100).toFixed(1)
+        })
+      }
+      
+      setData(variances)
   }
 
   const generateYTDPerformance = (transactions: any[], budget: any) => {
@@ -292,10 +317,21 @@ export function FinancialCharts({ type }: ChartProps) {
       
       // Use budget data if available, otherwise use a simple projection
       let plannedRevenue = 0
-      if (budget && budget['MRR']) {
-        const budgetKey = `${monthName} ${currentYear}`
-        plannedRevenue = budget['MRR'][budgetKey] || 0
-      } else {
+      const budgetKeys = ['MRR', 'mrr', 'Monthly Revenue', 'Revenue']
+      let budgetKey = null
+      
+      for (const key of budgetKeys) {
+        if (budget && budget[key]) {
+          const monthKey = `${monthName} ${currentYear}`
+          if (budget[key][monthKey]) {
+            plannedRevenue = budget[key][monthKey]
+            budgetKey = key
+            break
+          }
+        }
+      }
+      
+      if (plannedRevenue === 0) {
         // Simple projection based on average monthly revenue
         const avgMonthlyRevenue = transactions
           .filter((t: any) => t.amount > 0)

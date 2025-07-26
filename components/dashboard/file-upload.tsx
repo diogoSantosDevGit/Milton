@@ -5,11 +5,13 @@ import { EnhancedDataProcessor } from '@/lib/enhanced-data-processor'
 import { ColumnMapping, FileType } from '@/types/schema'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { FileText } from 'lucide-react'
 
 interface MappingReview {
   fileName: string
   headers: string[]
   sampleRows: any[]
+  fullData: any[] // Add full data storage
   mappings: ColumnMapping[]
   detectedType: string
   confidence: number
@@ -41,7 +43,9 @@ export default function FileUpload({ selectedUseCase }: FileUploadProps) {
 
       // Step 1: Parse the raw file
       const { headers, data } = await parseRawFile(file)
-      console.log('Parsed file with headers:', headers.length, 'and data rows:', data.length)
+      console.log('🔍 Parsed file with headers:', headers.length, 'and data rows:', data.length)
+      console.log('🔍 Headers:', headers)
+      console.log('🔍 Sample data:', data.slice(0, 3))
       
       // Step 2: Send to AI for analysis (AI-first approach)
       const ai = new EnhancedDataProcessor()
@@ -63,11 +67,13 @@ export default function FileUpload({ selectedUseCase }: FileUploadProps) {
         fileName: file.name,
         headers,
         sampleRows: data.slice(0, 5),
+        fullData: data, // Store the full dataset
         mappings: aiResult.suggestedMappings,
         detectedType: aiResult.detectedType,
         confidence: 0.8, // Default confidence
         issues: []
       })
+      console.log('🔍 Set mapping review with full data rows:', data.length)
       setShowMappingUI(true)
       setUploadedFiles(files)
     } catch (error) {
@@ -85,11 +91,14 @@ export default function FileUpload({ selectedUseCase }: FileUploadProps) {
     setIsProcessing(true)
     try {
       const ai = new EnhancedDataProcessor()
-      const { mappings, sampleRows, detectedType } = mappingReview
+      const { mappings, fullData, detectedType } = mappingReview
       
-      console.log('Converting to standard format...')
-      // Convert to standard format using AI mappings
-      const result = await ai.convertToStandardFormat(sampleRows, mappings, detectedType as FileType)
+      console.log('🔍 Converting to standard format...')
+      console.log('🔍 Using full data count:', fullData.length)
+      console.log('🔍 Detected type:', detectedType)
+      
+      // Convert to standard format using AI mappings with FULL DATA
+      const result = await ai.convertToStandardFormat(fullData, mappings, detectedType as FileType)
       
       // Store the processed data
       const dataKey = detectedType === 'deals' ? 'crmDeals' : 'transactions'
@@ -136,6 +145,56 @@ export default function FileUpload({ selectedUseCase }: FileUploadProps) {
           </div>
         )}
       </div>
+
+      {/* File Upload Results Display */}
+      {mappingReview && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              File Analysis Results
+              <span className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                Enhanced detection with multi-language support and AI fallback
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                    <FileText className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-sm">{mappingReview.fileName}</div>
+                    <div className="text-xs text-gray-500">
+                      Detected as: <span className="font-medium">{mappingReview.detectedType}</span>
+                    </div>
+                  </div>
+                </div>
+                                  <div className="text-right">
+                    <div className="text-sm font-medium text-green-600">
+                      {Math.round(mappingReview.confidence * 100)}% confidence
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Processed {mappingReview.fullData.length} records
+                    </div>
+                  </div>
+              </div>
+              
+              {mappingReview.issues.length > 0 && (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <h4 className="font-medium text-yellow-800 mb-2">Issues Found:</h4>
+                  <ul className="text-sm text-yellow-700 space-y-1">
+                    {mappingReview.issues.map((issue, idx) => (
+                      <li key={idx}>• {issue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {mappingReview && showMappingUI && (
         <Card>

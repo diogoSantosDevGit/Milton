@@ -9,6 +9,7 @@ import { MetricsGrid } from '@/components/dashboard/metrics-grid'
 import { LogoutButton } from '@/components/dashboard/logout-button'
 import FileUpload from '@/components/dashboard/file-upload'
 import { UploadedFilesDisplay } from '@/components/dashboard/uploaded-files-display'
+import { FileManagement } from '@/components/dashboard/file-management'
 import { FinancialCharts } from '@/components/dashboard/financial-charts'
 import { SalesPipeline } from '@/components/dashboard/sales-pipeline'
 import { CashFlowAnalysis } from '@/components/dashboard/cash-flow-analysis'
@@ -53,6 +54,11 @@ export default function DashboardPage() {
       const crmDeals = localStorage.getItem('crmDeals')
       const budget = localStorage.getItem('budget')
 
+      console.log('🔍 Checking uploaded data:')
+      console.log('🔍 Transactions:', transactions ? JSON.parse(transactions).length : 'none')
+      console.log('🔍 CRM Deals:', crmDeals ? JSON.parse(crmDeals).length : 'none')
+      console.log('🔍 Budget:', budget ? 'exists' : 'none')
+
       const hasData = !!(transactions || crmDeals || budget)
       setHasUploadedData(hasData)
 
@@ -79,10 +85,10 @@ export default function DashboardPage() {
           sampleTransactions.push({
             id: `rev-${i}`,
             date: `${year}-${String(month + 1).padStart(2, '0')}-15`,
-            name: `Revenue ${monthDate.toLocaleString('default', { month: 'long' })}`,
-            description: `Revenue ${monthDate.toLocaleString('default', { month: 'long' })}`,
+            name: `Subscription Revenue ${monthDate.toLocaleString('default', { month: 'long' })}`,
+            description: `Subscription Revenue ${monthDate.toLocaleString('default', { month: 'long' })}`,
             amount: 2000 + (i * 500), // Increasing revenue
-            category: 'Revenue',
+            category: 'Subscription',
             reference: `REV-${i}`
           })
           
@@ -90,10 +96,10 @@ export default function DashboardPage() {
           sampleTransactions.push({
             id: `exp-${i}`,
             date: `${year}-${String(month + 1).padStart(2, '0')}-20`,
-            name: `Expenses ${monthDate.toLocaleString('default', { month: 'long' })}`,
-            description: `Expenses ${monthDate.toLocaleString('default', { month: 'long' })}`,
+            name: `Operating Expenses ${monthDate.toLocaleString('default', { month: 'long' })}`,
+            description: `Operating Expenses ${monthDate.toLocaleString('default', { month: 'long' })}`,
             amount: -(1500 + (i * 200)), // Increasing expenses
-            category: 'Expenses',
+            category: 'Salaries',
             reference: `EXP-${i}`
           })
         }
@@ -103,42 +109,77 @@ export default function DashboardPage() {
         sampleTransactions.push({
           id: 'current-rev-1',
           date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-05`,
-          name: `Current Month Revenue 1`,
-          description: `Current Month Revenue 1`,
+          name: `Subscription Revenue`,
+          description: `Subscription Revenue`,
           amount: 3000,
-          category: 'Revenue',
+          category: 'Subscription',
           reference: 'CURRENT-REV-1'
         })
         sampleTransactions.push({
           id: 'current-rev-2',
           date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-10`,
-          name: `Current Month Revenue 2`,
-          description: `Current Month Revenue 2`,
+          name: `One-time Service`,
+          description: `One-time Service`,
           amount: 2500,
-          category: 'Revenue',
+          category: 'One-time Service',
           reference: 'CURRENT-REV-2'
         })
         sampleTransactions.push({
           id: 'current-exp-1',
           date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-15`,
-          name: `Current Month Expenses 1`,
-          description: `Current Month Expenses 1`,
+          name: `COGS`,
+          description: `Cost of Goods Sold`,
           amount: -1200,
-          category: 'Expenses',
+          category: 'COGS',
           reference: 'CURRENT-EXP-1'
         })
         sampleTransactions.push({
           id: 'current-exp-2',
           date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-20`,
-          name: `Current Month Expenses 2`,
-          description: `Current Month Expenses 2`,
+          name: `Marketing`,
+          description: `Marketing Expenses`,
           amount: -800,
-          category: 'Expenses',
+          category: 'Marketing',
           reference: 'CURRENT-EXP-2'
         })
         
         localStorage.setItem('transactions', JSON.stringify(sampleTransactions))
         console.log('✅ Sample transaction data added')
+        
+        // Add sample budget data for variance analysis and YTD performance
+        const sampleBudget = {
+          months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+          'MRR': {
+            'Jan 2025': 5000,
+            'Feb 2025': 5500,
+            'Mar 2025': 6000,
+            'Apr 2025': 6500,
+            'May 2025': 7000,
+            'Jun 2025': 7500,
+            'Jul 2025': 8000,
+            'Aug 2025': 8500,
+            'Sep 2025': 9000,
+            'Oct 2025': 9500,
+            'Nov 2025': 10000,
+            'Dec 2025': 10500
+          },
+          'OPEX Total': {
+            'Jan 2025': -3000,
+            'Feb 2025': -3200,
+            'Mar 2025': -3400,
+            'Apr 2025': -3600,
+            'May 2025': -3800,
+            'Jun 2025': -4000,
+            'Jul 2025': -4200,
+            'Aug 2025': -4400,
+            'Sep 2025': -4600,
+            'Oct 2025': -4800,
+            'Nov 2025': -5000,
+            'Dec 2025': -5200
+          }
+        }
+        localStorage.setItem('budget', JSON.stringify(sampleBudget))
+        console.log('✅ Sample budget data added')
       }
     }
 
@@ -155,18 +196,16 @@ export default function DashboardPage() {
           setSelectedUseCase(storedUseCase)
           setUseCaseConfirmed(true)
         } else {
-          // For testing - temporarily auto-confirm a default use case
-          console.log('⚡ Auto-setting default use case for testing')
-          setSelectedUseCase('b2b-startup')
-          setUseCaseConfirmed(true)
-          localStorage.setItem('selectedUseCase', 'b2b-startup')
-          localStorage.setItem('useCaseConfirmed', 'true')
+          // Don't auto-confirm - let user select
+          console.log('📝 No use case confirmed, showing selector')
+          setSelectedUseCase(null)
+          setUseCaseConfirmed(false)
         }
       } catch (error) {
         console.error('Error checking use case:', error)
-        // Fallback to default
-        setSelectedUseCase('b2b-startup')
-        setUseCaseConfirmed(true)
+        // Fallback to showing selector
+        setSelectedUseCase(null)
+        setUseCaseConfirmed(false)
       }
     }
 
@@ -231,6 +270,8 @@ export default function DashboardPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
+          
+
 
           {/* DEBUG INFO - Remove in production */}
           <Card className="mb-4 border-yellow-300 bg-yellow-50">
@@ -252,18 +293,36 @@ export default function DashboardPage() {
                 }}>
                   Clear All Data
                 </Button>
+                <Button size="sm" variant="outline" onClick={() => {
+                  console.log('🔍 Current localStorage contents:')
+                  console.log('🔍 Transactions:', localStorage.getItem('transactions'))
+                  console.log('🔍 CRM Deals:', localStorage.getItem('crmDeals'))
+                  console.log('🔍 Budget:', localStorage.getItem('budget'))
+                }}>
+                  Debug Data
+                </Button>
+                <Button size="sm" variant="destructive" onClick={() => {
+                  localStorage.clear()
+                  sessionStorage.clear()
+                  window.location.reload()
+                }}>
+                  🚨 FORCE FRESH START
+                </Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* Use Case Selection Section - Always show for now */}
-          <div className="mb-8">
-            <UseCaseSelector
-              selectedUseCase={selectedUseCase}
-              onUseCaseSelect={handleUseCaseSelect}
-              onConfirm={handleUseCaseConfirm}
-            />
-          </div>
+          {/* Use Case Selection Section - Show when not confirmed */}
+          {!useCaseConfirmed && (
+            <div className="mb-8 border-2 border-blue-200 bg-blue-50 p-6 rounded-lg">
+              <h3 className="text-xl font-semibold mb-4 text-blue-800">Select Your Business Type</h3>
+              <UseCaseSelector
+                selectedUseCase={selectedUseCase}
+                onUseCaseSelect={handleUseCaseSelect}
+                onConfirm={handleUseCaseConfirm}
+              />
+            </div>
+          )}
 
           {/* Show business type badge when confirmed */}
           {useCaseConfirmed && selectedUseCase && (
@@ -280,44 +339,58 @@ export default function DashboardPage() {
                   onClick={resetUseCase}
                   className="text-xs"
                 >
-                  Change
+                  Change Use Case
                 </Button>
               </div>
             </div>
           )}
 
-          {/* Collapsible Reports Section */}
-          <Collapsible open={isReportsOpen} onOpenChange={setIsReportsOpen} className="mb-8">
-            <Card>
-              <CollapsibleTrigger asChild>
-                <CardHeader className="cursor-pointer hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <FileText className="h-5 w-5" />
-                        Generate Reports
-                      </CardTitle>
-                      <CardDescription>
-                        Export professional PDF reports with your current KPIs and analytics
-                      </CardDescription>
-                    </div>
-                    <Button variant="ghost" size="sm">
-                      {isReportsOpen ? (
-                        <ChevronUp className="h-4 w-4" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </CardHeader>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <CardContent>
-                  <ReportsTab />
-                </CardContent>
-              </CollapsibleContent>
-            </Card>
-          </Collapsible>
+          {/* Reports Section - Show when data is available */}
+          {hasUploadedData ? (
+            <div className="mb-8 border-2 border-green-200 bg-green-50 p-6 rounded-lg">
+              <h3 className="text-xl font-semibold mb-4 text-green-800">Generate Reports</h3>
+              <Collapsible open={isReportsOpen} onOpenChange={setIsReportsOpen}>
+                <Card>
+                  <CollapsibleTrigger asChild>
+                    <CardHeader className="cursor-pointer hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="flex items-center gap-2">
+                            <FileText className="h-5 w-5" />
+                            Generate Reports
+                          </CardTitle>
+                          <CardDescription>
+                            Export professional PDF reports with your current KPIs and analytics
+                          </CardDescription>
+                        </div>
+                        <Button variant="ghost" size="sm">
+                          {isReportsOpen ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </CardHeader>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <CardContent>
+                      <ReportsTab />
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+            </div>
+          ) : (
+            <div className="mb-8 border-2 border-gray-200 bg-gray-50 p-6 rounded-lg">
+              <h3 className="text-xl font-semibold mb-4 text-gray-800">Generate Reports</h3>
+              <div className="text-center py-8 text-gray-500">
+                <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-lg font-medium mb-2">No Data Available</h3>
+                <p className="text-sm">Upload your financial data to generate reports.</p>
+              </div>
+            </div>
+          )}
 
           {/* File Upload Section - ALWAYS SHOW (Fixed) */}
           <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="mb-8">
@@ -361,7 +434,9 @@ export default function DashboardPage() {
                   {useCaseConfirmed ? (
                     <>
                       <FileUpload selectedUseCase={selectedUseCase} />
-                      <UploadedFilesDisplay />
+                      <div className="mt-6">
+                        <FileManagement />
+                      </div>
                     </>
                   ) : (
                     <div className="text-center py-8 text-gray-500">
