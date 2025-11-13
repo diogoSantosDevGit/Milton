@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { miltonEventsAPI } from '@/lib/milton-events'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -14,9 +16,10 @@ import { FinancialCharts } from '@/components/dashboard/financial-charts'
 import { SalesPipeline } from '@/components/dashboard/sales-pipeline'
 import { CashFlowAnalysis } from '@/components/dashboard/cash-flow-analysis'
 import { MetricSelector } from '@/components/dashboard/metric-selector'
-import { ReportsTab } from '@/components/dashboard/reports-tab'
 import { UseCaseSelector } from '@/components/dashboard/use-case-selector'
 import { getUseCase } from '@/types/use-cases'
+import WelcomeBanner from '@/components/dashboard/WelcomeBanner'
+
 
 import {
   Collapsible,
@@ -24,6 +27,20 @@ import {
   CollapsibleTrigger
 } from '@/components/ui/collapsible'
 import { ChevronDown, ChevronUp, Upload, FileText, Target } from 'lucide-react'
+
+// Helper component for locked/missing data placeholders
+const LockedPlaceholder = ({ message }: { message: string }) => (
+  <div className="rounded border border-dashed p-8 text-center text-sm text-gray-500">
+    💡 {message}
+  </div>
+)
+
+type DataStatus = {
+  ok?: boolean
+  bank?: boolean
+  crm?: boolean
+  budget?: boolean
+} | null
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -34,153 +51,113 @@ export default function DashboardPage() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(false) // Start with loading false for development
   const [isUploadOpen, setIsUploadOpen] = useState(true) // Default to open
-  const [isReportsOpen, setIsReportsOpen] = useState(true) // Default to open
   const [hasUploadedData, setHasUploadedData] = useState(false)
+  const [dataStatus, setDataStatus] = useState<DataStatus>(null)
+  const [pendingUpload, setPendingUpload] = useState<{
+    file: File | null
+    datasetType: 'bank' | 'crm' | 'budget' | null
+  } | null>(null)
+  const [showUploadModeDialog, setShowUploadModeDialog] = useState(false)
   
   // Use case selection state
   const [selectedUseCase, setSelectedUseCase] = useState<string | null>(null)
   const [useCaseConfirmed, setUseCaseConfirmed] = useState(false)
+
+  // Check if user has uploaded data via Supabase/API
+  const checkUploadedData = async () => {
+      try {
+        console.log('[Dashboard] Checking uploaded data from API...')
+        const res = await fetch('/api/data/status')
+        
+        if (!res.ok) {
+          console.warn('[Dashboard] Data status API returned non-OK status')
+          setIsUploadOpen(true)
+          setDataStatus(null)
+          return
+        }
+
+        const json = await res.json()
+        console.log('[Dashboard] Data status:', json)
+
+        // Update dataStatus state for conditional rendering
+        setDataStatus(json)
+
+        const hasData = !!(json?.bank || json?.crm || json?.budget)
+        setHasUploadedData(hasData)
+
+        // If no data, keep upload section open by default
+        if (!hasData) {
+          setIsUploadOpen(true)
+        }
+      } catch (err) {
+        console.error('[Dashboard] Error checking data status:', err)
+        setIsUploadOpen(true)
+        setDataStatus(null)
+      }
+  }
+
+  // Upload file with specified mode
+  const uploadFileWithMode = async (
+      file: File,
+      datasetType: 'bank' | 'crm' | 'budget',
+      mode: 'overwrite' | 'append'
+    ) => {
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('datasetType', datasetType)
+        formData.append('mode', mode)
+
+        const res = await fetch('/api/data/upload', {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!res.ok) {
+          const errorText = await res.text()
+          console.error('[Dashboard] Upload failed', errorText)
+          alert('Upload failed: ' + errorText)
+          return
+        }
+
+        const result = await res.json()
+        console.log('[Dashboard] Upload successful:', result)
+
+        // Refresh data status and trigger dashboard generation
+        await checkUploadedData()
+        document.dispatchEvent(new CustomEvent('data-status:refresh'))
+        miltonEventsAPI.publish('dashboard.generate', {
+          businessModel: localStorage.getItem('businessModel') || ''
+        })
+      } catch (err) {
+        console.error('[Dashboard] Upload error:', err)
+        alert('Upload error: ' + (err as Error).message)
+      }
+  }
+
+  // Handle file selected from dashboard uploader
+  const handleDashboardFileSelected = async (
+      file: File,
+      datasetType: 'bank' | 'crm' | 'budget'
+    ) => {
+      const alreadyHasData =
+        (datasetType === 'bank' && dataStatus?.bank) ||
+        (datasetType === 'crm' && dataStatus?.crm) ||
+        (datasetType === 'budget' && dataStatus?.budget)
+
+      if (alreadyHasData) {
+        setPendingUpload({ file, datasetType })
+        setShowUploadModeDialog(true)
+      } else {
+        await uploadFileWithMode(file, datasetType, 'append')
+      }
+  }
 
   useEffect(() => {
     // Temporarily skip auth check for development
     const checkAuth = async () => {
       console.log('⚠️ Skipping auth check for development')
       setLoading(false)
-    }
-
-    // Check if user has uploaded data
-    const checkUploadedData = () => {
-      const transactions = localStorage.getItem('transactions')
-      const crmDeals = localStorage.getItem('crmDeals')
-      const budget = localStorage.getItem('budget')
-
-      console.log('🔍 Checking uploaded data:')
-      console.log('🔍 Transactions:', transactions ? JSON.parse(transactions).length : 'none')
-      console.log('🔍 CRM Deals:', crmDeals ? JSON.parse(crmDeals).length : 'none')
-      console.log('🔍 Budget:', budget ? 'exists' : 'none')
-
-      const hasData = !!(transactions || crmDeals || budget)
-      setHasUploadedData(hasData)
-
-      // If no data, keep upload section open by default
-      if (!hasData) {
-        setIsUploadOpen(true)
-        
-        // For testing - add sample transaction data for testing
-        console.log('🔧 Adding sample transaction data for testing')
-        const currentDate = new Date()
-        const currentYear = currentDate.getFullYear()
-        const currentMonth = currentDate.getMonth()
-        
-        // Create sample data for multiple months to populate charts
-        const sampleTransactions = []
-        
-        // Add data for the last 6 months (for burn rate chart)
-        for (let i = 5; i >= 0; i--) {
-          const monthDate = new Date(currentYear, currentMonth - i, 1)
-          const month = monthDate.getMonth()
-          const year = monthDate.getFullYear()
-          
-          // Add revenue for this month
-          sampleTransactions.push({
-            id: `rev-${i}`,
-            date: `${year}-${String(month + 1).padStart(2, '0')}-15`,
-            name: `Subscription Revenue ${monthDate.toLocaleString('default', { month: 'long' })}`,
-            description: `Subscription Revenue ${monthDate.toLocaleString('default', { month: 'long' })}`,
-            amount: 2000 + (i * 500), // Increasing revenue
-            category: 'Subscription',
-            reference: `REV-${i}`
-          })
-          
-          // Add expenses for this month
-          sampleTransactions.push({
-            id: `exp-${i}`,
-            date: `${year}-${String(month + 1).padStart(2, '0')}-20`,
-            name: `Operating Expenses ${monthDate.toLocaleString('default', { month: 'long' })}`,
-            description: `Operating Expenses ${monthDate.toLocaleString('default', { month: 'long' })}`,
-            amount: -(1500 + (i * 200)), // Increasing expenses
-            category: 'Salaries',
-            reference: `EXP-${i}`
-          })
-        }
-        
-        // Add extra data specifically for current month to ensure charts have data
-        const currentMonthName = new Date(currentYear, currentMonth, 1).toLocaleString('default', { month: 'long' })
-        sampleTransactions.push({
-          id: 'current-rev-1',
-          date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-05`,
-          name: `Subscription Revenue`,
-          description: `Subscription Revenue`,
-          amount: 3000,
-          category: 'Subscription',
-          reference: 'CURRENT-REV-1'
-        })
-        sampleTransactions.push({
-          id: 'current-rev-2',
-          date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-10`,
-          name: `One-time Service`,
-          description: `One-time Service`,
-          amount: 2500,
-          category: 'One-time Service',
-          reference: 'CURRENT-REV-2'
-        })
-        sampleTransactions.push({
-          id: 'current-exp-1',
-          date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-15`,
-          name: `COGS`,
-          description: `Cost of Goods Sold`,
-          amount: -1200,
-          category: 'COGS',
-          reference: 'CURRENT-EXP-1'
-        })
-        sampleTransactions.push({
-          id: 'current-exp-2',
-          date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-20`,
-          name: `Marketing`,
-          description: `Marketing Expenses`,
-          amount: -800,
-          category: 'Marketing',
-          reference: 'CURRENT-EXP-2'
-        })
-        
-        localStorage.setItem('transactions', JSON.stringify(sampleTransactions))
-        console.log('✅ Sample transaction data added')
-        
-        // Add sample budget data for variance analysis and YTD performance
-        const sampleBudget = {
-          months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-          'MRR': {
-            'Jan 2025': 5000,
-            'Feb 2025': 5500,
-            'Mar 2025': 6000,
-            'Apr 2025': 6500,
-            'May 2025': 7000,
-            'Jun 2025': 7500,
-            'Jul 2025': 8000,
-            'Aug 2025': 8500,
-            'Sep 2025': 9000,
-            'Oct 2025': 9500,
-            'Nov 2025': 10000,
-            'Dec 2025': 10500
-          },
-          'OPEX Total': {
-            'Jan 2025': -3000,
-            'Feb 2025': -3200,
-            'Mar 2025': -3400,
-            'Apr 2025': -3600,
-            'May 2025': -3800,
-            'Jun 2025': -4000,
-            'Jul 2025': -4200,
-            'Aug 2025': -4400,
-            'Sep 2025': -4600,
-            'Oct 2025': -4800,
-            'Nov 2025': -5000,
-            'Dec 2025': -5200
-          }
-        }
-        localStorage.setItem('budget', JSON.stringify(sampleBudget))
-        console.log('✅ Sample budget data added')
-      }
     }
 
     // Check if use case was previously selected
@@ -249,27 +226,8 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <h1 className="text-xl font-semibold text-gray-900">
-                Key Performance Indicator Cockpit
-              </h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">{user?.email || 'Development Mode'}</span>
-              {user && <LogoutButton />}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
+    <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <div className="px-4 py-6 sm:px-0">
           
 
 
@@ -293,11 +251,18 @@ export default function DashboardPage() {
                 }}>
                   Clear All Data
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => {
-                  console.log('🔍 Current localStorage contents:')
-                  console.log('🔍 Transactions:', localStorage.getItem('transactions'))
-                  console.log('🔍 CRM Deals:', localStorage.getItem('crmDeals'))
-                  console.log('🔍 Budget:', localStorage.getItem('budget'))
+                <Button size="sm" variant="outline" onClick={async () => {
+                  console.log('🔍 Checking data status from API...')
+                  try {
+                    const res = await fetch('/api/data/status')
+                    const data = await res.json()
+                    console.log('🔍 Data status:', data)
+                    console.log('🔍 Bank:', data?.bank ? 'Yes' : 'No')
+                    console.log('🔍 CRM:', data?.crm ? 'Yes' : 'No')
+                    console.log('🔍 Budget:', data?.budget ? 'Yes' : 'No')
+                  } catch (err) {
+                    console.error('🔍 Error fetching data status:', err)
+                  }
                 }}>
                   Debug Data
                 </Button>
@@ -345,53 +310,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Reports Section - Show when data is available */}
-          {hasUploadedData ? (
-            <div className="mb-8 border-2 border-green-200 bg-green-50 p-6 rounded-lg">
-              <h3 className="text-xl font-semibold mb-4 text-green-800">Generate Reports</h3>
-              <Collapsible open={isReportsOpen} onOpenChange={setIsReportsOpen}>
-                <Card>
-                  <CollapsibleTrigger asChild>
-                    <CardHeader className="cursor-pointer hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <CardTitle className="flex items-center gap-2">
-                            <FileText className="h-5 w-5" />
-                            Generate Reports
-                          </CardTitle>
-                          <CardDescription>
-                            Export professional PDF reports with your current KPIs and analytics
-                          </CardDescription>
-                        </div>
-                        <Button variant="ghost" size="sm">
-                          {isReportsOpen ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </CardHeader>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <CardContent>
-                      <ReportsTab />
-                    </CardContent>
-                  </CollapsibleContent>
-                </Card>
-              </Collapsible>
-            </div>
-          ) : (
-            <div className="mb-8 border-2 border-gray-200 bg-gray-50 p-6 rounded-lg">
-              <h3 className="text-xl font-semibold mb-4 text-gray-800">Generate Reports</h3>
-              <div className="text-center py-8 text-gray-500">
-                <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <h3 className="text-lg font-medium mb-2">No Data Available</h3>
-                <p className="text-sm">Upload your financial data to generate reports.</p>
-              </div>
-            </div>
-          )}
-
           {/* File Upload Section - ALWAYS SHOW (Fixed) */}
           <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="mb-8">
             <Card>
@@ -433,7 +351,10 @@ export default function DashboardPage() {
                   {/* Always render the content, just disable if use case not confirmed */}
                   {useCaseConfirmed ? (
                     <>
-                      <FileUpload selectedUseCase={selectedUseCase} />
+                      <FileUpload 
+                        selectedUseCase={selectedUseCase}
+                        onFileSelected={handleDashboardFileSelected}
+                      />
                       <div className="mt-6">
                         <FileManagement />
                       </div>
@@ -486,32 +407,100 @@ export default function DashboardPage() {
                   onMetricsChange={(metrics) => setSelectedMetrics(metrics)}
                 />
               </div>
-              <MetricsGrid selectedMetrics={selectedMetrics} />
-              <h2 className="text-xl font-semibold mb-4 mt-8">Performance Charts</h2>
-              <div className="grid gap-4 md:grid-cols-2">
-                <FinancialCharts type="mrr-vs-plan" />
-                <FinancialCharts type="burn-rate" />
-              </div>
+              {dataStatus?.bank || dataStatus?.crm || dataStatus?.budget ? (
+                <>
+                  <MetricsGrid selectedMetrics={selectedMetrics} />
+                  <h2 className="text-xl font-semibold mb-4 mt-8">Performance Charts</h2>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FinancialCharts type="mrr-vs-plan" />
+                    <FinancialCharts type="burn-rate" />
+                  </div>
+                </>
+              ) : (
+                <LockedPlaceholder message="Upload your financial data (bank transactions, CRM, or budget) in the 'Upload Financial Data' section above to see your key metrics and performance charts." />
+              )}
             </TabsContent>
 
             <TabsContent value="financial" className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <FinancialCharts type="income-statement" />
-                <FinancialCharts type="variance-analysis" />
-              </div>
-              <FinancialCharts type="ytd-performance" />
+              {dataStatus?.budget ? (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FinancialCharts type="income-statement" />
+                    <FinancialCharts type="variance-analysis" />
+                  </div>
+                  <FinancialCharts type="ytd-performance" />
+                </>
+              ) : (
+                <LockedPlaceholder message="To unlock Financial Analysis, upload your budget data in the 'Upload Financial Data' section above." />
+              )}
             </TabsContent>
 
             <TabsContent value="sales" className="space-y-4">
-              <SalesPipeline />
+              {dataStatus?.crm ? (
+                <SalesPipeline />
+              ) : (
+                <LockedPlaceholder message="To unlock your Sales Pipeline, upload your CRM data in the 'Upload Financial Data' section above." />
+              )}
             </TabsContent>
 
             <TabsContent value="cashflow" className="space-y-4">
-              <CashFlowAnalysis />
+              {dataStatus?.bank ? (
+                <CashFlowAnalysis />
+              ) : (
+                <LockedPlaceholder message="To unlock Cash Flow Analysis, upload your bank transaction data in the 'Upload Financial Data' section above." />
+              )}
             </TabsContent>
           </Tabs>
+      </div>
+
+      {/* Upload Mode Dialog */}
+      {showUploadModeDialog && pendingUpload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="rounded-md bg-white p-6 shadow-lg max-w-md w-full space-y-4">
+            <h2 className="text-lg font-semibold">How should I use this file?</h2>
+            <p className="text-sm text-gray-600">
+              We detected existing data for this dataset type. Do you want to{' '}
+              <strong>overwrite the existing data</strong> or treat this as a{' '}
+              <strong>new dataset</strong> and review it in the Data Model Builder?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowUploadModeDialog(false)
+                  setPendingUpload(null)
+                }}
+                className="rounded bg-gray-200 px-3 py-1.5 text-sm hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!pendingUpload) return
+                  await uploadFileWithMode(pendingUpload.file!, pendingUpload.datasetType!, 'overwrite')
+                  setShowUploadModeDialog(false)
+                  setPendingUpload(null)
+                }}
+                className="rounded bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700"
+              >
+                Overwrite existing data
+              </button>
+              <button
+                onClick={async () => {
+                  if (!pendingUpload) return
+                  await uploadFileWithMode(pendingUpload.file!, pendingUpload.datasetType!, 'append')
+                  setShowUploadModeDialog(false)
+                  setPendingUpload(null)
+                  // redirect to Model Builder so user can inspect the new data
+                  router.push('/dashboard/model')
+                }}
+                className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+              >
+                Treat as new dataset
+              </button>
+            </div>
+          </div>
         </div>
-      </main>
+      )}
     </div>
   )
 }

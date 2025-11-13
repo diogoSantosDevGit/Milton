@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt } = await request.json()
+    const { prompt, model } = await request.json()
 
     if (!prompt) {
       return NextResponse.json(
@@ -12,7 +12,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Received prompt for analysis')
+    // Support both string prompts (legacy) and message arrays (insights)
+    const isMessageArray = Array.isArray(prompt)
+    console.log('Received prompt for analysis', isMessageArray ? '(message array)' : '(string)')
 
     // Check if OpenAI key exists
     if (!process.env.OPENAI_API_KEY) {
@@ -64,20 +66,25 @@ export async function POST(request: NextRequest) {
 
     console.log('Making OpenAI API call...')
 
+    // Handle message array format (for insights) vs string format (for file analysis)
+    const messages = isMessageArray 
+      ? prompt 
+      : [
+          {
+            role: "system",
+            content: "You are an expert financial data analyst specializing in German business data. Always respond with valid JSON only, no additional text or formatting."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ]
+
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert financial data analyst specializing in German business data. Always respond with valid JSON only, no additional text or formatting."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0.1,
-      max_tokens: 2000,
+      model: model || "gpt-4",
+      messages,
+      temperature: isMessageArray ? 0.2 : 0.1,
+      max_tokens: isMessageArray ? 220 : 2000,
     })
 
     const responseText = completion.choices[0]?.message?.content
@@ -87,6 +94,14 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('OpenAI raw response received, length:', responseText.length)
+
+    // For message array format (insights), return simple text response
+    if (isMessageArray) {
+      return NextResponse.json({
+        content: responseText,
+        result: responseText
+      })
+    }
 
     // Try to parse the JSON response
     let parsedResponse

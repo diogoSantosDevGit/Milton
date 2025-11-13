@@ -53,6 +53,7 @@ export interface DataProcessingResult {
   previewData: any[]
   issues: string[]
   needsManualReview: boolean
+  autoMapped?: boolean
   businessInsights?: {
     detectedLanguage?: string
     dateFormat?: string

@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Trash2, RefreshCw, FileText, Database, DollarSign } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { getUploadedFilesSummary, deleteFileData, FileSummary } from '@/lib/data-service'
 
 interface FileData {
-  type: 'transactions' | 'deals' | 'budget'
+  type: 'transactions' | 'deals' | 'budgets'
   label: string
   count: number
   icon: any
@@ -18,90 +20,141 @@ interface FileData {
 export function FileManagement() {
   const [files, setFiles] = useState<FileData[]>([])
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
-  const checkFiles = () => {
-    const fileData: FileData[] = []
-
-    // Check transactions
-    const transactions = localStorage.getItem('transactions')
-    if (transactions) {
-      try {
-        const data = JSON.parse(transactions)
-        fileData.push({
-          type: 'transactions',
-          label: 'Bank Transactions',
-          count: Array.isArray(data) ? data.length : 0,
-          icon: DollarSign,
-          color: 'bg-green-100 text-green-800',
-          lastUpdated: new Date().toLocaleString()
-        })
-      } catch (error) {
-        console.error('Error parsing transactions:', error)
+  const fetchFiles = async () => {
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        console.warn('⚠️ No authenticated user found')
+        setFiles([])
+        setIsLoading(false)
+        return
       }
-    }
 
-    // Check CRM deals
-    const crmDeals = localStorage.getItem('crmDeals')
-    if (crmDeals) {
-      try {
-        const data = JSON.parse(crmDeals)
-        fileData.push({
-          type: 'deals',
-          label: 'CRM Deals',
-          count: Array.isArray(data) ? data.length : 0,
-          icon: FileText,
-          color: 'bg-blue-100 text-blue-800',
-          lastUpdated: new Date().toLocaleString()
+      const summaries = await getUploadedFilesSummary(supabase, user.id)
+      
+      // Map summaries to FileData with icons and colors
+      const fileData: FileData[] = summaries.map((summary) => {
+          let type: 'transactions' | 'deals' | 'budgets'
+          let icon: any
+          let color: string
+          
+          switch (summary.name) {
+            case 'transactions':
+              type = 'transactions'
+              icon = DollarSign
+              color = 'bg-green-100 text-green-800'
+              break
+            case 'crm_deals':
+              type = 'deals'
+              icon = FileText
+              color = 'bg-blue-100 text-blue-800'
+              break
+            case 'budgets':
+              type = 'budgets'
+              icon = Database
+              color = 'bg-purple-100 text-purple-800'
+              break
+            default:
+              type = 'transactions'
+              icon = FileText
+              color = 'bg-gray-100 text-gray-800'
+          }
+          
+          return {
+            type,
+            label: summary.label,
+            count: summary.count,
+            icon,
+            color,
+            lastUpdated: summary.updated_at 
+              ? new Date(summary.updated_at).toLocaleString() 
+              : 'N/A'
+          }
         })
-      } catch (error) {
-        console.error('Error parsing CRM deals:', error)
-      }
+      
+      setFiles(fileData)
+    } catch (error) {
+      console.error('❌ Failed to fetch files:', error)
+      setFiles([])
+    } finally {
+      setIsLoading(false)
     }
-
-    // Check budget
-    const budget = localStorage.getItem('budget')
-    if (budget) {
-      try {
-        const data = JSON.parse(budget)
-        fileData.push({
-          type: 'budget',
-          label: 'Budget Data',
-          count: 1,
-          icon: Database,
-          color: 'bg-purple-100 text-purple-800',
-          lastUpdated: new Date().toLocaleString()
-        })
-      } catch (error) {
-        console.error('Error parsing budget:', error)
-      }
-    }
-
-    setFiles(fileData)
   }
 
-  const deleteFile = (type: string) => {
-    const key = type === 'deals' ? 'crmDeals' : type
-    localStorage.removeItem(key)
-    checkFiles()
-    
-    // Trigger a page refresh to update all components
-    window.location.reload()
+  const deleteFile = async (type: 'transactions' | 'deals' | 'budgets') => {
+    const confirmed = confirm(`Are you sure you want to delete all ${type} data? This cannot be undone.`)
+    if (!confirmed) return
+
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        alert('No authenticated user found')
+        return
+      }
+
+      // Map type to table name
+      const tableName = type === 'deals' ? 'crm_deals' : type
+      
+      const result = await deleteFileData(supabase, user.id, tableName)
+      
+      if (result.success) {
+        alert(`Successfully deleted all ${type} data`)
+        await fetchFiles() // Refresh the list
+        
+        // Also clear localStorage cache if it exists
+        const localKey = type === 'deals' ? 'crmDeals' : type
+        localStorage.removeItem(localKey)
+      } else {
+        alert(`Failed to delete ${type}: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Delete operation failed:', error)
+      alert('Failed to delete data. Please try again.')
+    }
   }
 
-  const refreshFiles = () => {
+  const refreshFiles = async () => {
     setIsRefreshing(true)
-    checkFiles()
-    setTimeout(() => setIsRefreshing(false), 1000)
+    await fetchFiles()
+    setTimeout(() => setIsRefreshing(false), 500)
   }
 
   useEffect(() => {
-    checkFiles()
-    
-    // Check for changes every 3 seconds
-    const interval = setInterval(checkFiles, 3000)
-    
-    return () => clearInterval(interval)
+    fetchFiles()
+
+    const handleRefresh = () => fetchFiles()
+    window.addEventListener('data-status:refresh', handleRefresh)
+
+    // Refresh every 10 seconds to pick up new uploads
+    const interval = setInterval(fetchFiles, 10000)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('data-status:refresh', handleRefresh)
+    }
   }, [])
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">File Management</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8 text-gray-500">
+            <RefreshCw className="h-12 w-12 mx-auto mb-4 text-gray-300 animate-spin" />
+            <p className="text-sm">Loading file data...</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   if (files.length === 0) {
     return (
@@ -147,8 +200,8 @@ export function FileManagement() {
                     <Icon className="h-3 w-3" />
                     {file.label}
                   </Badge>
-                  <span className="text-sm text-gray-600">
-                    {file.count} {file.type === 'budget' ? 'file' : 'records'}
+                  <span className={`text-sm ${file.count === 0 ? 'text-gray-400 italic' : 'text-gray-600'}`}>
+                    {file.count === 0 ? 'No records yet' : `${file.count} ${file.count === 1 ? 'record' : 'records'}`}
                   </span>
                   {file.lastUpdated && (
                     <span className="text-xs text-gray-400">

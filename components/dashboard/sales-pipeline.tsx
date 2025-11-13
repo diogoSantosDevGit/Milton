@@ -15,15 +15,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { createClient } from "@/lib/supabase/client"
+import { useUserPreferences } from '@/lib/context/UserPreferencesContext'
+import { formatCurrency as formatCurrencyUtil, formatDate } from '@/lib/utils/formatters'
 
 interface Deal {
   id: string
-  dealName: string
+  deal_name: string
   phase: string
   amount: number
-  clientName: string
-  firstAppointment: string
-  closingDate: string
+  client_name: string
+  first_appointment: string
+  closing_date: string
   product: string
 }
 
@@ -58,8 +61,10 @@ const normalizePhase = (value: string): string => {
 }
 
 export function SalesPipeline() {
+  const { prefs } = useUserPreferences()
   const [deals, setDeals] = useState<Deal[]>([])
   const [allDeals, setAllDeals] = useState<Deal[]>([])
+  const [loading, setLoading] = useState(true)
   const [showWeighted, setShowWeighted] = useState(false)
   const [colorMode, setColorMode] = useState<'individual' | 'corporate'>('individual')
   const [corporateColor, setCorporateColor] = useState('#3b82f6')
@@ -77,13 +82,15 @@ export function SalesPipeline() {
   const [formatStyle, setFormatStyle] = useState<'short' | 'swiss' | 'mio'>('short')
 
   const formatCurrency = (value: number): string => {
+    const currencySymbol = prefs.currency === 'EUR' ? '€' : prefs.currency === 'USD' ? '$' : prefs.currency === 'GBP' ? '£' : 'CHF'
+    
     if (formatStyle === 'swiss') {
-      return `€${Math.round(value / 1000).toLocaleString('de-CH')}'000`
+      return `${currencySymbol}${Math.round(value / 1000).toLocaleString('de-CH')}'000`
     }
     if (formatStyle === 'mio') {
-      return `€${(value / 1_000_000).toFixed(1)} Mio`
+      return `${currencySymbol}${(value / 1_000_000).toFixed(1)} Mio`
     }
-    return `€${(value / 1000).toFixed(0)}k`
+    return `${currencySymbol}${(value / 1000).toFixed(0)}k`
   }
 
   // Default individual colors for each phase
@@ -226,21 +233,50 @@ export function SalesPipeline() {
   }
 
   useEffect(() => {
-    const loadCRMData = () => {
-      const crmData = localStorage.getItem('crmDeals')
-      if (!crmData) return
-
-      const dealsData: Deal[] = JSON.parse(crmData)
-      const today = new Date()
-      setAllDeals(dealsData)
-      const futureDeals = dealsData.filter(d => new Date(d.closingDate) > today)
-      setDeals(futureDeals)
-      // Calculate metrics
-      calculatePipelineMetrics(dealsData)
+    const loadCRMData = async () => {
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          setLoading(false)
+          return
+        }
+        
+        const { data, error } = await supabase
+          .from("crm_deals")
+          .select("*")
+          .eq("user_id", user.id)
+        
+        if (error) {
+          console.error("Failed to load CRM deals:", error)
+          setLoading(false)
+          return
+        }
+        
+        const dealsData: Deal[] = data || []
+        console.log("📊 Loaded CRM deals from Supabase:", dealsData.length)
+        console.log("✅ Sample Supabase deal object:", dealsData[0])
+        console.log("💬 Deal names check:", dealsData.map(d => d.deal_name))
+        console.log("💬 Client names check:", dealsData.map(d => d.client_name))
+        console.log("💬 Object keys of first deal:", Object.keys(dealsData[0] || {}))
+        
+        setAllDeals(dealsData)
+        setDeals(dealsData) // Show all deals, not just future ones
+        console.log("📊 Showing all deals without date filtering")
+        
+        // Ensure state is updated before calculating metrics
+        await new Promise(r => setTimeout(r, 100))
+        console.log("🧩 Metrics computation triggered with deals count:", dealsData.length)
+        calculatePipelineMetrics(dealsData)
+        setLoading(false)
+      } catch (error) {
+        console.error("Error loading CRM data:", error)
+        setLoading(false)
+      }
     }
 
     loadCRMData()
-  }, [])
+  }, [prefs])
 
   const calculatePipelineMetrics = (dealsData: Deal[]) => {
     console.log('[CRM DEALS]', dealsData);
@@ -248,12 +284,12 @@ export function SalesPipeline() {
     console.log('[CRM NORMALIZED PHASES]', dealsData.map(d => normalizePhase(d.phase || '')));
     // Pipeline by phase
     const phaseOrder = ['Lead Generation', 'First Contact', 'Need Qualification', 'Negotiation', 'Deal', 'No Deal']
-    // Only consider deals with closingDate in the future
+    // Show all deals, not just future ones
     const today = new Date()
-    const futureDeals = dealsData.filter(d => new Date(d.closingDate) > today)
-    console.log('[PHASE CHECK]', Array.from(new Set(futureDeals.map(d => d.phase))))
+    const allDeals = dealsData
+    console.log('[PHASE CHECK]', Array.from(new Set(allDeals.map(d => d.phase))))
     const phaseData = phaseOrder.map(phase => {
-      const phaseDeals = futureDeals.filter(d => normalizePhase(d.phase || '') === phase)
+      const phaseDeals = allDeals.filter(d => normalizePhase(d.phase || '') === phase)
       // Debug for Lead Generation phase
       if (phase === 'Lead Generation') {
         console.log('Lead Gen matches:', phaseDeals.map(d => ({ amount: d.amount, type: typeof d.amount })))
@@ -270,9 +306,9 @@ export function SalesPipeline() {
     const activePhasesData = phaseOrder.slice(0, -1) // Exclude 'No Deal'
     
     const funnelData = activePhasesData.map((phase) => {
-      const phaseDeals = futureDeals.filter(d => normalizePhase(d.phase || '') === phase)
+      const phaseDeals = allDeals.filter(d => normalizePhase(d.phase || '') === phase)
       const count = phaseDeals.length
-      const totalDeals = futureDeals.length
+      const totalDeals = allDeals.length
       const value = phaseDeals.reduce((sum, d) => {
         const amount = Number(d.amount)
         return sum + (isNaN(amount) ? 0 : amount)
@@ -292,8 +328,7 @@ export function SalesPipeline() {
     const closedDealsForProducts = dealsData.filter(
       d =>
         normalizePhase(d.phase || '') === 'Deal' &&
-        d.closingDate &&
-        new Date(d.closingDate) <= today
+        d.product
     )
     const productData = closedDealsForProducts.reduce((acc: any[], deal) => {
       const existing = acc.find(p => p.product === deal.product)
@@ -314,13 +349,13 @@ export function SalesPipeline() {
     const closedDeals = dealsData.filter(
       d =>
         normalizePhase(d.phase || '') === 'Deal' &&
-        d.firstAppointment &&
-        d.closingDate &&
-        new Date(d.closingDate) <= today
+        d.first_appointment &&
+        d.closing_date &&
+        new Date(d.closing_date) <= today
     )
     const salesCycles = closedDeals.map(d => {
-      const start = new Date(d.firstAppointment)
-      const end = new Date(d.closingDate)
+      const start = new Date(d.first_appointment)
+      const end = new Date(d.closing_date)
       return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
     })
     const avgSalesCycle = salesCycles.length > 0 ?
@@ -350,9 +385,9 @@ export function SalesPipeline() {
         })
         
         // Add deals to appropriate month and phase
-        futureDeals.forEach(deal => {
-          if (deal.closingDate) {
-            const dealDate = new Date(deal.closingDate)
+        allDeals.forEach(deal => {
+          if (deal.closing_date) {
+            const dealDate = new Date(deal.closing_date)
             const dealYearMonth = `${dealDate.getFullYear()}-${String(dealDate.getMonth() + 1).padStart(2, '0')}`
             const normPhase = normalizePhase(deal.phase || '')
             if (
@@ -379,15 +414,18 @@ export function SalesPipeline() {
     })()
 
     // Top 10 deals
-    const topDeals = [...futureDeals]
-      .sort((a, b) => b.amount - a.amount)
+    const topDeals = [...allDeals]
+      .filter(d => d.deal_name && d.client_name && d.amount)
+      .sort((a, b) => Number(b.amount) - Number(a.amount))
       .slice(0, 10)
       .map(d => ({
-        name: d.dealName.substring(0, 30) + '...',
-        client: d.clientName,
-        amount: d.amount,
+        name: d.deal_name?.trim() !== '' ? d.deal_name.substring(0, 30) + '...' : '(No Name)',
+        client: d.client_name?.trim() !== '' ? d.client_name : '(No Client)',
+        amount: Number(d.amount) || 0,
         phase: normalizePhase(d.phase || '')
       }))
+
+    console.log("🎯 Top Deals Preview:", topDeals.slice(0, 3))
 
     setMetrics({
       pipelineByPhase: phaseData,
@@ -418,6 +456,21 @@ export function SalesPipeline() {
   }
 
   const currentColors = getCurrentColors()
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Sales Pipeline</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center h-64">
+            <p className="text-gray-500">Loading pipeline data...</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   if (deals.length === 0) {
     return (
@@ -554,7 +607,7 @@ export function SalesPipeline() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              €{deals.reduce((sum, d) => sum + d.amount, 0).toLocaleString()}
+              {formatCurrencyUtil(deals.reduce((sum, d) => sum + d.amount, 0), prefs.currency)}
             </div>
           </CardContent>
         </Card>
@@ -589,8 +642,8 @@ export function SalesPipeline() {
                 // Only include deals closed in the past (Deal or No Deal)
                 const closedPast = allDeals.filter(d =>
                   ['Deal', 'No Deal'].includes(normalizePhase(d.phase || '')) &&
-                  d.closingDate &&
-                  new Date(d.closingDate) <= new Date()
+                  d.closing_date &&
+                  new Date(d.closing_date) <= new Date()
                 )
                 const wins = closedPast.filter(d => normalizePhase(d.phase || '') === 'Deal')
                 return closedPast.length > 0 ? ((wins.length / closedPast.length) * 100).toFixed(1) : '0.0'
@@ -831,24 +884,30 @@ export function SalesPipeline() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {metrics.topDeals.map((deal: any, index: number) => (
-                <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: currentColors[deal.phase] }}
-                    ></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{deal.name}</p>
-                      <p className="text-xs text-gray-500">{deal.client}</p>
+              {metrics.topDeals && metrics.topDeals.length > 0 ? (
+                metrics.topDeals.map((deal: any, index: number) => (
+                  <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: currentColors[deal.phase] || '#ccc' }}
+                      ></div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{deal.name}</p>
+                        <p className="text-xs text-gray-500">{deal.client}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold">{formatCurrency(deal.amount)}</p>
+                      <p className="text-xs text-gray-500">{deal.phase}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold">{formatCurrency(deal.amount)}</p>
-                    <p className="text-xs text-gray-500">{deal.phase}</p>
-                  </div>
+                ))
+              ) : (
+                <div className="flex items-center justify-center h-64 text-gray-500">
+                  No deals found. Please verify CRM data.
                 </div>
-              ))}
+              )}
             </div>
           </CardContent>
         </Card>

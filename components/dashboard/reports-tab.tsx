@@ -12,6 +12,12 @@ import { FileDown, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronUp } 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { createClient } from '@/lib/supabase/client'
+import { generateReportSlides } from '@/lib/pdf-generator-slides'
+import { getReportData } from '@/lib/report-data-service'
+import { generateInsights } from '@/lib/ai/insights'
+import { generateChartImages } from '@/lib/chart-generator'
+import { useUserPreferences } from '@/lib/context/UserPreferencesContext'
 
 interface ReportConfig {
   title: string
@@ -47,6 +53,7 @@ interface ReportConfig {
 }
 
 export function ReportsTab() {
+  const { prefs } = useUserPreferences()
   const [config, setConfig] = useState<ReportConfig>({
     title: 'Monthly Business Report',
     companyName: 'Your Company',
@@ -156,23 +163,72 @@ export function ReportsTab() {
       setGenerationStatus('error')
       return
     }
-    
-    const dataStatus = checkDataAvailability()
-    
-    if (!dataStatus.hasAnyData) {
-      setError('No data available. Please upload your financial data first.')
-      setGenerationStatus('error')
-      return
-    }
 
     setIsGenerating(true)
     setGenerationStatus('generating')
     setError(null)
 
     try {
-      // Use our new unified PDF generator with standardized layouts
-      const { generateUnifiedPDF } = await import('@/lib/pdf-generator')
-      await generateUnifiedPDF(config)
+      // Get Supabase client
+      const supabase = createClient()
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !user) {
+        throw new Error('No authenticated user found. Please log in.')
+      }
+
+      // Convert period label (e.g., "October 2025") into start/end ISO strings
+      function parsePeriodLabel(label: string | null | undefined): { start: string; end: string } | null {
+        if (!label) return null
+        try {
+          const [monthName, year] = label.split(' ')
+          const start = new Date(`${monthName} 1, ${year}`)
+          const end = new Date(start.getFullYear(), start.getMonth() + 1, 0) // last day of month
+          return {
+            start: start.toISOString().split('T')[0],
+            end: end.toISOString().split('T')[0]
+          }
+        } catch {
+          return null
+        }
+      }
+
+      const periodRange = parsePeriodLabel(config.reportPeriod)
+      
+      // Fetch report data from Supabase with period filter
+      const reportData = await getReportData(
+        supabase,
+        user.id,
+        periodRange || undefined
+      )
+
+      // Generate AI insights for each section
+      let insights: { overview?: string[]; financial?: string[]; pipeline?: string[]; cashflow?: string[] } = {}
+      try {
+        const [ov, fin, pipe, cf] = await Promise.all([
+          generateInsights(reportData, 'overview'),
+          generateInsights(reportData, 'financial'),
+          generateInsights(reportData, 'pipeline'),
+          generateInsights(reportData, 'cashflow'),
+        ])
+        insights = { overview: ov, financial: fin, pipeline: pipe, cashflow: cf }
+      } catch (insightError) {
+        console.warn('AI insights generation failed, proceeding without insights:', insightError)
+        // Continue with empty insights if OpenAI fails
+      }
+
+      // Generate chart images using QuickChart API
+      const chartImages = await generateChartImages(reportData)
+
+      // Generate PDF with live data, AI insights, chart images, and user preferences
+      await generateReportSlides(reportData, {
+        company: config.companyName || 'Milton Demo',
+        periodLabel: config.reportPeriod || 'Current Month',
+        currency: prefs.currency,
+        dateFormat: prefs.date_format,
+        numberFormat: prefs.number_format,
+        timezone: prefs.timezone
+      }, insights, chartImages)
 
       setGenerationStatus('success')
       setTimeout(() => setGenerationStatus('idle'), 3000)
@@ -534,7 +590,7 @@ export function ReportsTab() {
             <Alert>
               <Loader2 className="h-4 w-4 animate-spin" />
               <AlertDescription>
-                Generating your PDF report with standardized layouts and real data...
+                Fetching live data from Supabase and generating your PDF report...
               </AlertDescription>
             </Alert>
           )}
@@ -673,6 +729,7 @@ export function ReportsTab() {
           <li>Only your selected cards and insights</li>
           <li>Real financial data from your uploaded files</li>
           <li>Consistent margins and alignment across all slides</li>
+          <li>Dynamic charts generated from live data</li>
         </ul>
       </div>
     </div>

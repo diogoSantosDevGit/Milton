@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts'
 import { TrendingUp, TrendingDown, DollarSign, Calendar } from 'lucide-react'
+import { useUserPreferences } from '@/lib/context/UserPreferencesContext'
+import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 
 interface Transaction {
   id: string
@@ -15,6 +17,7 @@ interface Transaction {
 }
 
 export function CashFlowAnalysis() {
+  const { prefs } = useUserPreferences()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [metrics, setMetrics] = useState<any>({
     currentBalance: 0,
@@ -35,7 +38,7 @@ export function CashFlowAnalysis() {
     }
 
     loadTransactionData()
-  }, [])
+  }, [prefs])
 
   const calculateCashFlowMetrics = (txData: Transaction[]) => {
     // Sort transactions by date
@@ -149,7 +152,7 @@ export function CashFlowAnalysis() {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${metrics.currentBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              €{metrics.currentBalance.toLocaleString()}
+              {formatCurrency(metrics.currentBalance, prefs.currency)}
             </div>
           </CardContent>
         </Card>
@@ -162,7 +165,7 @@ export function CashFlowAnalysis() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              €{Math.round(metrics.burnRate).toLocaleString()}
+              {formatCurrency(Math.round(metrics.burnRate), prefs.currency)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">Last 3 months average</p>
           </CardContent>
@@ -189,7 +192,7 @@ export function CashFlowAnalysis() {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${metrics.monthlyFlow.length > 0 && metrics.monthlyFlow[metrics.monthlyFlow.length - 1].netFlow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              €{metrics.monthlyFlow.length > 0 ? Math.round(metrics.monthlyFlow[metrics.monthlyFlow.length - 1].netFlow).toLocaleString() : 0}
+              {metrics.monthlyFlow.length > 0 ? formatCurrency(Math.round(metrics.monthlyFlow[metrics.monthlyFlow.length - 1].netFlow), prefs.currency) : formatCurrency(0, prefs.currency)}
             </div>
           </CardContent>
         </Card>
@@ -206,7 +209,7 @@ export function CashFlowAnalysis() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Area type="monotone" dataKey="balance" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
             </AreaChart>
           </ResponsiveContainer>
@@ -224,7 +227,7 @@ export function CashFlowAnalysis() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Legend />
               <Bar dataKey="inflow" fill="#10b981" name="Inflow" />
               <Bar dataKey="outflow" fill="#ef4444" name="Outflow" />
@@ -247,7 +250,10 @@ export function CashFlowAnalysis() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ category, outflow }: any) => `${category}: €${(outflow/1000).toFixed(0)}k`}
+                  label={({ category, outflow }: any) => {
+                    const currencySymbol = prefs.currency === 'EUR' ? '€' : prefs.currency === 'USD' ? '$' : prefs.currency === 'GBP' ? '£' : 'CHF'
+                    return `${category}: ${currencySymbol}${(outflow/1000).toFixed(0)}k`
+                  }}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="outflow"
@@ -256,7 +262,7 @@ export function CashFlowAnalysis() {
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+                <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
@@ -274,12 +280,12 @@ export function CashFlowAnalysis() {
                   <div className="flex-1">
                     <p className="text-sm font-medium">{cat.category}</p>
                     <div className="flex space-x-4 text-xs text-gray-500">
-                      <span>In: €{cat.inflow.toLocaleString()}</span>
-                      <span>Out: €{cat.outflow.toLocaleString()}</span>
+                      <span>In: {formatCurrency(cat.inflow, prefs.currency)}</span>
+                      <span>Out: {formatCurrency(cat.outflow, prefs.currency)}</span>
                     </div>
                   </div>
                   <div className={`text-sm font-bold ${cat.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    €{cat.net.toLocaleString()}
+                    {formatCurrency(cat.net, prefs.currency)}
                   </div>
                 </div>
               ))}
@@ -299,7 +305,7 @@ export function CashFlowAnalysis() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Line 
                 type="monotone" 
                 dataKey="netFlow" 

@@ -4,12 +4,15 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts'
 import { WaterfallChart } from '@/components/dashboard/waterfall-chart'
+import { useUserPreferences } from '@/lib/context/UserPreferencesContext'
+import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 
 interface ChartProps {
   type: 'mrr-vs-plan' | 'burn-rate' | 'income-statement' | 'variance-analysis' | 'ytd-performance'
 }
 
 export function FinancialCharts({ type }: ChartProps) {
+  const { prefs } = useUserPreferences()
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -64,7 +67,7 @@ export function FinancialCharts({ type }: ChartProps) {
     }
 
     loadData()
-  }, [type])
+  }, [type, prefs])
 
   const generateMRRChart = (transactions: any[], budget: any, currentMonth: string) => {
     // Helper functions (same as MetricsGrid)
@@ -368,7 +371,7 @@ export function FinancialCharts({ type }: ChartProps) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Legend />
               <Bar dataKey="plan" fill="#94a3b8" name="Plan" />
               <Bar dataKey="actual" fill="#3b82f6" name="Actual" />
@@ -385,7 +388,7 @@ export function FinancialCharts({ type }: ChartProps) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Legend />
               <Bar dataKey="revenue" fill="#10b981" name="Revenue" />
               <Bar dataKey="expenses" fill="#ef4444" name="Expenses" />
@@ -404,7 +407,7 @@ export function FinancialCharts({ type }: ChartProps) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="metric" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Legend />
               <Bar dataKey="budget" fill="#94a3b8" name="Budget" />
               <Bar dataKey="actual" fill="#3b82f6" name="Actual" />
@@ -419,7 +422,7 @@ export function FinancialCharts({ type }: ChartProps) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Legend />
               <Line type="monotone" dataKey="cumActual" stroke="#3b82f6" name="YTD Actual" strokeWidth={2} />
               <Line type="monotone" dataKey="cumBudget" stroke="#94a3b8" name="YTD Budget" strokeWidth={2} strokeDasharray="5 5" />

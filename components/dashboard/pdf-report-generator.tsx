@@ -145,9 +145,24 @@ export function PDFReportGenerator() {
     setError(null)
 
     try {
-      // Use the unified PDF generator
-      const { generateUnifiedPDF } = await import('@/lib/pdf-generator')
-      await generateUnifiedPDF(config)
+      // Import dependencies
+      const { createClient } = await import('@/lib/supabase/client')
+      const { getReportData } = await import('@/lib/report-data-service')
+      const { generateReportSlides } = await import('@/lib/pdf-generator-slides')
+
+      // Get authenticated user
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('User not authenticated')
+
+      // Fetch live report data from Supabase
+      const reportData = await getReportData(supabase, user.id)
+
+      // Generate PDF with live data
+      await generateReportSlides(reportData, {
+        company: config.companyName || 'Your Company',
+        periodLabel: config.reportPeriod || 'Current Month'
+      })
 
       setGenerationStatus('success')
       setTimeout(() => setGenerationStatus('idle'), 3000)
