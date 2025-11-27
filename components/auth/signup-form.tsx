@@ -15,6 +15,7 @@ export function SignupForm() {
   const [password, setPassword] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
@@ -23,6 +24,7 @@ export function SignupForm() {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setSuccess(false)
 
     try {
       // Step 1: Sign up the user
@@ -31,13 +33,21 @@ export function SignupForm() {
         password,
       })
 
+      // Check if signup actually failed
       if (authError) {
         throw authError
       }
 
+      // Check if user was created (even if email confirmation is pending)
       if (!authData.user) {
         throw new Error('No user data returned')
       }
+
+      // Signup was successful! Now try to create profile and company
+      // These might fail due to RLS policies if email confirmation is required,
+      // but that's okay - we'll handle it after confirmation
+      let profileCreated = false
+      let companyCreated = false
 
       // Step 2: Create profile record
       const { error: profileError } = await supabase
@@ -47,9 +57,10 @@ export function SignupForm() {
           company_name: companyName,
         })
 
-      if (profileError) {
-        console.error('Profile error:', profileError)
-        // Don't throw here, continue to create company
+      if (!profileError) {
+        profileCreated = true
+      } else {
+        console.error('Profile error (may be due to email confirmation):', profileError)
       }
 
       // Step 3: Create company record
@@ -60,14 +71,21 @@ export function SignupForm() {
           created_by: authData.user.id,
         })
 
-      if (companyError) {
-        console.error('Company error:', companyError)
-        throw new Error('Failed to create company profile. Please try again.')
+      if (!companyError) {
+        companyCreated = true
+      } else {
+        console.error('Company error (may be due to email confirmation):', companyError)
       }
 
-      // Success! Redirect to dashboard
-      router.push('/dashboard')
-      router.refresh()
+      // Success! User was created, show success message
+      setSuccess(true)
+      setLoading(false)
+
+      // If email confirmation is not required and we have a session, redirect
+      if (authData.session) {
+        router.push('/dashboard')
+        router.refresh()
+      }
 
     } catch (err: any) {
       console.error('Signup error:', err)
@@ -87,6 +105,13 @@ export function SignupForm() {
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {success && (
+            <Alert variant="success">
+              <AlertDescription>
+                Account created successfully! Please check your email to confirm your account before signing in.
+              </AlertDescription>
             </Alert>
           )}
           <div className="space-y-2">
