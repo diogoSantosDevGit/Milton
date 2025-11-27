@@ -15,39 +15,48 @@ interface UploadedFile {
 export function UploadedFilesDisplay() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
 
-  useEffect(() => {
-    const checkUploadedFiles = () => {
-      const files: UploadedFile[] = []
+  const checkUploadedFiles = () => {
+    const files: UploadedFile[] = []
 
-      // Check transactions
-      const transactions = localStorage.getItem('transactions')
-      if (transactions) {
+    // Check transactions
+    const transactions = localStorage.getItem('transactions')
+    if (transactions) {
+      try {
         const data = JSON.parse(transactions)
         files.push({
           type: 'transactions',
           label: 'Bank Transactions',
-          count: data.length,
+          count: Array.isArray(data) ? data.length : 0,
           icon: DollarSign,
           color: 'bg-green-100 text-green-800'
         })
+      } catch (error) {
+        console.error('Error parsing transactions:', error)
       }
+    }
 
-      // Check CRM deals
-      const crmDeals = localStorage.getItem('crmDeals')
-      if (crmDeals) {
+    // Check CRM deals
+    const crmDeals = localStorage.getItem('crmDeals')
+    if (crmDeals) {
+      try {
         const data = JSON.parse(crmDeals)
         files.push({
           type: 'deals',
           label: 'CRM Deals',
-          count: data.length,
+          count: Array.isArray(data) ? data.length : 0,
           icon: FileText,
           color: 'bg-blue-100 text-blue-800'
         })
+      } catch (error) {
+        console.error('Error parsing CRM deals:', error)
       }
+    }
 
-      // Check budget
-      const budget = localStorage.getItem('budget')
-      if (budget) {
+    // Check budget
+    const budget = localStorage.getItem('budget')
+    if (budget) {
+      try {
+        const data = JSON.parse(budget)
         files.push({
           type: 'budget',
           label: 'Budget Data',
@@ -55,12 +64,31 @@ export function UploadedFilesDisplay() {
           icon: Database,
           color: 'bg-purple-100 text-purple-800'
         })
+      } catch (error) {
+        console.error('Error parsing budget:', error)
       }
-
-      setUploadedFiles(files)
     }
 
+    setUploadedFiles(files)
+  }
+
+  useEffect(() => {
     checkUploadedFiles()
+    
+    // Listen for storage changes to refresh the display
+    const handleStorageChange = () => {
+      checkUploadedFiles()
+    }
+    
+    window.addEventListener('storage', handleStorageChange)
+    
+    // Also check periodically for changes
+    const interval = setInterval(checkUploadedFiles, 2000)
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      clearInterval(interval)
+    }
   }, [])
 
   if (uploadedFiles.length === 0) {

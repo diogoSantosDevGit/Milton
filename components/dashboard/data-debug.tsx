@@ -13,6 +13,12 @@ export function DataDebugComponent() {
   const [analysis, setAnalysis] = useState<any>({})
 
   const refreshData = () => {
+    // Check if localStorage is available
+    if (typeof window === 'undefined') {
+      console.warn('localStorage not available during server-side rendering')
+      return
+    }
+    
     const data = {
       transactions: localStorage.getItem('transactions'),
       crmDeals: localStorage.getItem('crmDeals'),

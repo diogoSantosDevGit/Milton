@@ -4,12 +4,15 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts'
 import { WaterfallChart } from '@/components/dashboard/waterfall-chart'
+import { useUserPreferences } from '@/lib/context/UserPreferencesContext'
+import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 
 interface ChartProps {
   type: 'mrr-vs-plan' | 'burn-rate' | 'income-statement' | 'variance-analysis' | 'ytd-performance'
 }
 
 export function FinancialCharts({ type }: ChartProps) {
+  const { prefs } = useUserPreferences()
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -30,13 +33,13 @@ export function FinancialCharts({ type }: ChartProps) {
       const transactions = localStorage.getItem('transactions')
       const budget = localStorage.getItem('budget')
       
-      if (!transactions || !budget) {
+      if (!transactions) {
         setLoading(false)
         return
       }
 
       const transactionData = JSON.parse(transactions)
-      const budgetData = JSON.parse(budget)
+      const budgetData = budget ? JSON.parse(budget) : null
       
       // Get current month
       const now = new Date()
@@ -64,7 +67,7 @@ export function FinancialCharts({ type }: ChartProps) {
     }
 
     loadData()
-  }, [type])
+  }, [type, prefs])
 
   const generateMRRChart = (transactions: any[], budget: any, currentMonth: string) => {
     // Helper functions (same as MetricsGrid)
@@ -195,40 +198,30 @@ export function FinancialCharts({ type }: ChartProps) {
       categories[t.category] += t.amount
     })
     
-    // Calculate revenue and expenses
-    const subscriptionRevenue = categories['Subscription'] || 0
-    const serviceRevenue = (categories['One-time Service'] || 0) + (categories['Consulting'] || 0)
-    const totalRevenue = subscriptionRevenue + serviceRevenue
+    // Calculate revenue and expenses - use actual categories from data
+    const totalRevenue = Object.entries(categories)
+      .filter(([cat, amount]) => amount > 0)
+      .reduce((sum, [, amount]) => sum + amount, 0)
     
-    const cogs = Math.abs(categories['COGS'] || 0)
-    const salaries = Math.abs(categories['Salaries'] || 0)
-    const marketing = Math.abs(categories['Marketing'] || 0)
-    const rent = Math.abs(categories['Rent'] || 0)
-    const otherExpenses = Math.abs(
-      Object.entries(categories)
-        .filter(([cat, amount]) => 
-          amount < 0 && 
-          !['COGS', 'Salaries', 'Marketing', 'Rent'].includes(cat)
-        )
-        .reduce((sum, [, amount]) => sum + amount, 0)
-    )
+    const totalExpenses = Math.abs(Object.entries(categories)
+      .filter(([cat, amount]) => amount < 0)
+      .reduce((sum, [, amount]) => sum + amount, 0))
     
-    // Create waterfall data
+    // For waterfall chart, we'll use the actual categories found
     const waterfallData = [
-      { name: 'Revenue', value: totalRevenue },
-      { name: 'COGS', value: -cogs },
-      { name: 'Gross Profit', value: totalRevenue - cogs, isTotal: true }
+      { name: 'Revenue', value: totalRevenue }
     ]
     
-    // Add operating expenses if they exist
-    if (salaries > 0) waterfallData.push({ name: 'Salaries', value: -salaries })
-    if (marketing > 0) waterfallData.push({ name: 'Marketing', value: -marketing })
-    if (rent > 0) waterfallData.push({ name: 'Rent', value: -rent })
-    if (otherExpenses > 0) waterfallData.push({ name: 'Other OpEx', value: -otherExpenses })
+    // Add each expense category as a separate line
+    Object.entries(categories).forEach(([category, amount]) => {
+      if (amount < 0) {
+        waterfallData.push({ name: category, value: amount })
+      }
+    })
     
     // Add final total
-    const netIncome = totalRevenue - cogs - salaries - marketing - rent - otherExpenses
-    waterfallData.push({ name: 'Net Income', value: netIncome, isTotal: true })
+    const netIncome = totalRevenue + totalExpenses
+    waterfallData.push({ name: 'Net Income', value: netIncome })
     
     setData(waterfallData)
   }
@@ -252,33 +245,64 @@ export function FinancialCharts({ type }: ChartProps) {
       .filter((t: any) => t.amount < 0)
       .reduce((sum: number, t: any) => sum + t.amount, 0))
     
-    // Compare with budget
-    if (budget['MRR'] && budget['MRR'][currentMonth]) {
-      variances.push({
-        metric: 'Revenue',
-        budget: budget['MRR'][currentMonth],
-        actual: actualRevenue,
-        variance: actualRevenue - budget['MRR'][currentMonth],
-        variancePercent: ((actualRevenue / budget['MRR'][currentMonth] - 1) * 100).toFixed(1)
-      })
+    // Compare with budget - try different budget key formats
+    const budgetKeys = ['MRR', 'mrr', 'Monthly Revenue', 'Revenue']
+    let budgetRevenue = 0
+    let budgetKey = null
+    
+    for (const key of budgetKeys) {
+      if (budget[key] && budget[key][currentMonth]) {
+        budgetRevenue = budget[key][currentMonth]
+        budgetKey = key
+        break
+      }
     }
     
-    if (budget['OPEX Total'] && budget['OPEX Total'][currentMonth]) {
-      variances.push({
-        metric: 'Operating Expenses',
-        budget: Math.abs(budget['OPEX Total'][currentMonth]),
-        actual: actualExpenses,
-        variance: actualExpenses - Math.abs(budget['OPEX Total'][currentMonth]),
-        variancePercent: ((actualExpenses / Math.abs(budget['OPEX Total'][currentMonth]) - 1) * 100).toFixed(1)
-      })
+          if (budgetRevenue > 0) {
+        variances.push({
+          metric: 'Revenue',
+          budget: budgetRevenue,
+          actual: actualRevenue,
+          variance: actualRevenue - budgetRevenue,
+          variancePercent: ((actualRevenue / budgetRevenue - 1) * 100).toFixed(1)
+        })
+      }
+    
+    // Try different expense budget keys
+    const expenseKeys = ['OPEX Total', 'Total FC', 'Total Costs', 'Expenses', 'Total Expenses']
+    let budgetExpenses = 0
+    let expenseKey = null
+    
+    for (const key of expenseKeys) {
+      if (budget[key] && budget[key][currentMonth]) {
+        budgetExpenses = Math.abs(budget[key][currentMonth])
+        expenseKey = key
+        break
+      }
     }
     
-    setData(variances)
+          if (budgetExpenses > 0) {
+        variances.push({
+          metric: 'Operating Expenses',
+          budget: budgetExpenses,
+          actual: actualExpenses,
+          variance: actualExpenses - budgetExpenses,
+          variancePercent: ((actualExpenses / budgetExpenses - 1) * 100).toFixed(1)
+        })
+      }
+      
+      setData(variances)
   }
 
   const generateYTDPerformance = (transactions: any[], budget: any) => {
     const currentYear = new Date().getFullYear()
-    const ytdData = []
+    const ytdData: Array<{
+      month: string
+      actual: number
+      budget: number
+      cumActual: number
+      cumBudget: number
+    }> = []
     
     // Calculate YTD by month
     for (let month = 0; month <= new Date().getMonth(); month++) {
@@ -294,8 +318,29 @@ export function FinancialCharts({ type }: ChartProps) {
         .filter((t: any) => t.amount > 0)
         .reduce((sum: number, t: any) => sum + t.amount, 0)
       
-      const budgetKey = `${monthName} ${currentYear}`
-      const plannedRevenue = budget['MRR']?.[budgetKey] || 0
+      // Use budget data if available, otherwise use a simple projection
+      let plannedRevenue = 0
+      const budgetKeys = ['MRR', 'mrr', 'Monthly Revenue', 'Revenue']
+      let budgetKey = null
+      
+      for (const key of budgetKeys) {
+        if (budget && budget[key]) {
+          const monthKey = `${monthName} ${currentYear}`
+          if (budget[key][monthKey]) {
+            plannedRevenue = budget[key][monthKey]
+            budgetKey = key
+            break
+          }
+        }
+      }
+      
+      if (plannedRevenue === 0) {
+        // Simple projection based on average monthly revenue
+        const avgMonthlyRevenue = transactions
+          .filter((t: any) => t.amount > 0)
+          .reduce((sum: number, t: any) => sum + t.amount, 0) / 12
+        plannedRevenue = avgMonthlyRevenue
+      }
       
       ytdData.push({
         month: monthName,
@@ -326,7 +371,7 @@ export function FinancialCharts({ type }: ChartProps) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Legend />
               <Bar dataKey="plan" fill="#94a3b8" name="Plan" />
               <Bar dataKey="actual" fill="#3b82f6" name="Actual" />
@@ -343,7 +388,7 @@ export function FinancialCharts({ type }: ChartProps) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Legend />
               <Bar dataKey="revenue" fill="#10b981" name="Revenue" />
               <Bar dataKey="expenses" fill="#ef4444" name="Expenses" />
@@ -362,7 +407,7 @@ export function FinancialCharts({ type }: ChartProps) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="metric" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Legend />
               <Bar dataKey="budget" fill="#94a3b8" name="Budget" />
               <Bar dataKey="actual" fill="#3b82f6" name="Actual" />
@@ -377,7 +422,7 @@ export function FinancialCharts({ type }: ChartProps) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `€${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value, prefs.currency)} />
               <Legend />
               <Line type="monotone" dataKey="cumActual" stroke="#3b82f6" name="YTD Actual" strokeWidth={2} />
               <Line type="monotone" dataKey="cumBudget" stroke="#94a3b8" name="YTD Budget" strokeWidth={2} strokeDasharray="5 5" />

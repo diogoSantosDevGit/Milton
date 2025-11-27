@@ -3,11 +3,14 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DollarSign, TrendingUp, CreditCard, Activity, Users, Target, Wallet, Percent, Calendar, Zap } from 'lucide-react'
+import { useUserPreferences } from '@/lib/context/UserPreferencesContext'
+import { formatCurrency as formatCurrencyUtil, formatNumber, formatPercentage } from '@/lib/utils/formatters'
 
 interface Transaction {
   id: string
   date: string
-  name: string
+  name?: string
+  description?: string
   amount: number
   reference: string
   category: string
@@ -49,6 +52,7 @@ interface MetricsGridProps {
 }
 
 export function MetricsGrid({ selectedMetrics = ['mrr', 'arr', 'cashBalance', 'burnRate', 'contracted', 'ltmRevenue', 'grossMargin', 'customers'] }: MetricsGridProps) {
+  const { prefs } = useUserPreferences()
   const [metrics, setMetrics] = useState<Metrics>({
     mrr: 0,
     arr: 0,
@@ -108,13 +112,14 @@ export function MetricsGrid({ selectedMetrics = ['mrr', 'arr', 'cashBalance', 'b
 
   const validateTransaction = (tx: any): tx is Transaction => {
     // Check if transaction has required properties and they're valid
+    // Note: enhanced-data-processor uses 'description' instead of 'name'
     return (
       tx &&
       typeof tx === 'object' &&
       tx.hasOwnProperty('id') &&
       tx.hasOwnProperty('date') &&
       tx.hasOwnProperty('amount') &&
-      tx.hasOwnProperty('name') &&
+      (tx.hasOwnProperty('name') || tx.hasOwnProperty('description')) &&
       tx.hasOwnProperty('category') &&
       !isNaN(safeParseFloat(tx.amount))
     )
@@ -374,7 +379,7 @@ export function MetricsGrid({ selectedMetrics = ['mrr', 'arr', 'cashBalance', 'b
         : new Set(
             transactions
               .filter(t => safeParseFloat(t.amount) > 0 && isRevenue(t))
-              .map(t => safeToLowerCase(t.name).trim())
+              .map(t => safeToLowerCase(t.name || t.description || '').trim())
               .filter(name => name !== '')
           ).size
       
@@ -418,21 +423,23 @@ export function MetricsGrid({ selectedMetrics = ['mrr', 'arr', 'cashBalance', 'b
   const formatCurrency = (value: number | null) => {
     if (value === null) return 'N/A'
     const absValue = Math.abs(value)
+    const currencySymbol = prefs.currency === 'EUR' ? '€' : prefs.currency === 'USD' ? '$' : prefs.currency === 'GBP' ? '£' : 'CHF'
+    
     if (absValue >= 1000000) {
-      return `€${(value / 1000000).toFixed(1)}M`
+      return `${currencySymbol}${(value / 1000000).toFixed(1)}M`
     } else if (absValue >= 1000) {
-      return `€${(value / 1000).toFixed(1)}k`
+      return `${currencySymbol}${(value / 1000).toFixed(1)}k`
     }
-    return `€${value.toFixed(0)}`
+    return formatCurrencyUtil(value, prefs.currency)
   }
 
   const formatMetricValue = (metric: any) => {
     if (metric.format === 'currency') {
       return formatCurrency(metric.value)
     } else if (metric.format === 'percentage') {
-      return metric.value !== null ? `${metric.value}%` : 'N/A'
+      return metric.value !== null ? formatPercentage(metric.value / 100) : 'N/A'
     } else if (metric.format === 'number') {
-      return metric.value !== null ? metric.value.toString() : 'N/A'
+      return metric.value !== null ? formatNumber(metric.value, prefs.number_format) : 'N/A'
     } else if (metric.format === 'months') {
       return metric.value !== null ? 
         (metric.value > 100 ? '∞' : `${metric.value} months`) : 'N/A'

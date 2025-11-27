@@ -82,6 +82,9 @@ export class ChartCaptureService {
         }
 
         // Create React root and render component
+        if (!this.container) {
+          throw new Error('Container not initialized')
+        }
         const root = createRoot(this.container)
         root.render(component)
 
@@ -159,7 +162,7 @@ export class ChartCaptureService {
             } catch (fallbackError) {
               console.error('Fallback capture also failed:', fallbackError)
               root.unmount()
-              reject(new Error(`Chart capture failed: ${error.message}`))
+              reject(new Error(`Chart capture failed: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`))
             }
           }
         }, 2000) // Give enough time for charts to render
