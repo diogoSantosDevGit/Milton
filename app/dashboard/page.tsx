@@ -228,54 +228,7 @@ export default function DashboardPage() {
   return (
     <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
       <div className="px-4 py-6 sm:px-0">
-          
-
-
-          {/* DEBUG INFO - Remove in production */}
-          <Card className="mb-4 border-yellow-300 bg-yellow-50">
-            <CardHeader>
-              <CardTitle className="text-sm">🐛 Debug Info (Remove in production)</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs space-y-1">
-              <div>useCaseConfirmed: <strong>{useCaseConfirmed ? 'true' : 'false'}</strong></div>
-              <div>selectedUseCase: <strong>{selectedUseCase || 'null'}</strong></div>
-              <div>hasUploadedData: <strong>{hasUploadedData ? 'true' : 'false'}</strong></div>
-              <div>isUploadOpen: <strong>{isUploadOpen ? 'true' : 'false'}</strong></div>
-              <div className="flex gap-2 mt-2">
-                <Button size="sm" variant="outline" onClick={resetUseCase}>
-                  Reset Use Case
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => {
-                  localStorage.clear()
-                  window.location.reload()
-                }}>
-                  Clear All Data
-                </Button>
-                <Button size="sm" variant="outline" onClick={async () => {
-                  console.log('🔍 Checking data status from API...')
-                  try {
-                    const res = await fetch('/api/data/status')
-                    const data = await res.json()
-                    console.log('🔍 Data status:', data)
-                    console.log('🔍 Bank:', data?.bank ? 'Yes' : 'No')
-                    console.log('🔍 CRM:', data?.crm ? 'Yes' : 'No')
-                    console.log('🔍 Budget:', data?.budget ? 'Yes' : 'No')
-                  } catch (err) {
-                    console.error('🔍 Error fetching data status:', err)
-                  }
-                }}>
-                  Debug Data
-                </Button>
-                <Button size="sm" variant="destructive" onClick={() => {
-                  localStorage.clear()
-                  sessionStorage.clear()
-                  window.location.reload()
-                }}>
-                  🚨 FORCE FRESH START
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+        
 
           {/* Use Case Selection Section - Show when not confirmed */}
           {!useCaseConfirmed && (

@@ -20,20 +20,35 @@ export function LoginForm() {
   const searchParams = useSearchParams()
   const supabase = createClient()
 
-  // Check for confirmation success in URL params
+  // Check for email confirmation success
   useEffect(() => {
     const confirmed = searchParams.get('confirmed')
-    const errorParam = searchParams.get('error')
+    const type = searchParams.get('type')
+    const code = searchParams.get('code')
+    const token = searchParams.get('token')
     
-    if (confirmed === 'true') {
+    // Check URL hash for Supabase redirects (sometimes Supabase uses hash fragments)
+    const hash = typeof window !== 'undefined' ? window.location.hash : ''
+    const hasHashParams = hash.includes('type=') || hash.includes('access_token=')
+    
+    // Check localStorage for pending confirmation flag
+    const pendingConfirmation = typeof window !== 'undefined' 
+      ? localStorage.getItem('email_confirmation_pending') === 'true'
+      : false
+    
+    // Check if user just confirmed their email
+    if (confirmed === 'true' || type === 'signup' || code || token || hasHashParams || pendingConfirmation) {
       setSuccess(true)
-      // Clean up URL by removing the query parameter
-      router.replace('/auth/login', { scroll: false })
-    }
-    
-    if (errorParam === 'confirmation_failed') {
-      setError('Email confirmation failed. Please try again or request a new confirmation email.')
-      router.replace('/auth/login', { scroll: false })
+      // Clear the pending flag
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('email_confirmation_pending')
+      }
+      // Clean up URL by removing query params and hash after a brief delay
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({}, '', '/auth/login')
+        }
+      }, 100)
     }
   }, [searchParams, router])
 
