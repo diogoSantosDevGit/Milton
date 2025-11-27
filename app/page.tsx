@@ -42,7 +42,7 @@ async function LandingPage() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/auth/signup">
               <Button size="lg" className="text-lg px-8 py-6">
-                Start free trial
+                Get started
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
@@ -137,16 +137,16 @@ async function LandingPage() {
 
       {/* CTA Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-12 text-center text-white">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-12 text-center">
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
             Ready to take control of your finances?
           </h2>
-          <p className="text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
+          <p className="text-lg text-gray-600 mb-8 max-w-2xl mx-auto">
             Join startups that trust Milton to make smarter financial decisions
           </p>
           <Link href="/auth/signup">
-            <Button size="lg" variant="secondary" className="text-lg px-8 py-6">
-              Get started for free
+            <Button size="lg" className="text-lg px-8 py-6 bg-blue-600 hover:bg-blue-700">
+              Get started
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </Link>
