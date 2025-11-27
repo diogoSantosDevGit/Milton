@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,9 +14,28 @@ export function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
+
+  // Check for confirmation success in URL params
+  useEffect(() => {
+    const confirmed = searchParams.get('confirmed')
+    const errorParam = searchParams.get('error')
+    
+    if (confirmed === 'true') {
+      setSuccess(true)
+      // Clean up URL by removing the query parameter
+      router.replace('/auth/login', { scroll: false })
+    }
+    
+    if (errorParam === 'confirmation_failed') {
+      setError('Email confirmation failed. Please try again or request a new confirmation email.')
+      router.replace('/auth/login', { scroll: false })
+    }
+  }, [searchParams, router])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,6 +67,13 @@ export function LoginForm() {
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {success && (
+            <Alert variant="success">
+              <AlertDescription>
+                🎉 Email confirmed successfully! You can now log in to your account.
+              </AlertDescription>
             </Alert>
           )}
           <div className="space-y-2">
